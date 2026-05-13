@@ -1,4 +1,4 @@
-"""Build read-only HTML month grids for upcoming MMA cards (Odds API schedule)."""
+"""HTML month grids for upcoming MMA cards (Odds API schedule); optional pickable links."""
 
 from __future__ import annotations
 
@@ -10,6 +10,29 @@ from html import escape
 import pandas as pd
 
 from utils.odds_display import format_american
+
+# URL query key: clicking a calendar cell navigates with this param; we consume it once
+# and sync session_state (Streamlit buttons in nested columns were unusably narrow).
+MMA_CAL_QUERY_KEY = "mma_cal_pick"
+
+
+def _preserved_query_excluding_mma() -> str:
+    """Rebuild query string without ``mma_cal_pick`` so calendar links keep other params."""
+    import streamlit as st
+    from urllib.parse import quote
+
+    parts: list[str] = []
+    qp = st.query_params
+    for k in qp.keys():
+        if k == MMA_CAL_QUERY_KEY:
+            continue
+        v = qp.get(k)
+        if isinstance(v, (list, tuple)):
+            for item in v:
+                parts.append(f"{quote(str(k), safe='')}={quote(str(item), safe='')}")
+        else:
+            parts.append(f"{quote(str(k), safe='')}={quote(str(v), safe='')}")
+    return "&".join(parts)
 
 
 def aggregate_counts_and_tooltips(df: pd.DataFrame) -> tuple[dict[date, int], dict[date, str]]:
@@ -69,7 +92,17 @@ def display_months_for_counts(counts: dict[date, int], *, max_months: int = 4) -
     return _months_to_display(counts, max_months=max_months)
 
 
-def _month_grid_html(y: int, m: int, counts: dict[date, int], tips: dict[date, str]) -> str:
+def _month_grid_html(
+    y: int,
+    m: int,
+    counts: dict[date, int],
+    tips: dict[date, str],
+    *,
+    pickable: bool = False,
+    selected: date | None = None,
+    query_key: str = MMA_CAL_QUERY_KEY,
+    query_prefix: str = "",
+) -> str:
     cal = calendar.Calendar(firstweekday=calendar.SUNDAY)
     weeks = cal.monthdatescalendar(y, m)
     month_name = date(y, m, 1).strftime("%B %Y")
@@ -86,7 +119,18 @@ def _month_grid_html(y: int, m: int, counts: dict[date, int], tips: dict[date, s
             tip_attr = f' title="{escape(tip)}"' if tip else ""
             if n:
                 inner = f'<span class="cnt">{n}</span><span class="dn">{d.day}</span>'
+                if pickable:
+                    qk_e = escape(query_key)
+                    iso_e = escape(d.isoformat())
+                    p = query_prefix.strip()
+                    if p:
+                        href = f"?{p}&{qk_e}={iso_e}"
+                    else:
+                        href = f"?{qk_e}={iso_e}"
+                    inner = f'<a class="mma-cal-pick" href="{href}">{inner}</a>'
                 cls = "day has"
+                if pickable and selected is not None and d == selected:
+                    cls += " sel"
             else:
                 inner = f'<span class="dn">{d.day}</span>'
                 cls = "day"
@@ -98,36 +142,116 @@ def _month_grid_html(y: int, m: int, counts: dict[date, int], tips: dict[date, s
     )
 
 
-def schedule_calendar_html(df: pd.DataFrame, *, max_months: int = 4) -> str:
-    """Full HTML document fragment: CSS + up to ``max_months`` month grids (Sunday-first, US layout)."""
+def schedule_calendar_html(
+    df: pd.DataFrame,
+    *,
+    max_months: int = 4,
+    pickable: bool = False,
+    selected: date | None = None,
+    query_prefix: str = "",
+) -> str:
+    """Full HTML fragment: CSS + up to ``max_months`` month grids (Sunday-first, US layout).
+
+    When ``pickable`` is True, days with bouts are ``<a href="?mma_cal_pick=YYYY-MM-DD">`` links;
+    use :func:`consume_mma_calendar_url_pick` on each run to apply the choice and strip the param.
+    """
     counts, tips = aggregate_counts_and_tooltips(df)
     months = display_months_for_counts(counts, max_months=max_months)
-    cols = "".join(f'<div class="mma-cal-col">{_month_grid_html(y, m, counts, tips)}</div>' for y, m in months)
+    cols = "".join(
+        f'<div class="mma-cal-col">{_month_grid_html(y, m, counts, tips, pickable=pickable, selected=selected, query_prefix=query_prefix)}</div>'
+        for y, m in months
+    )
+    css_pick = """
+    .mma-cal-mon td.day.has { cursor: pointer; }
+    .mma-cal-mon td.day.has a.mma-cal-pick { display: flex; flex-direction: column; align-items: center; justify-content: center;
+      text-decoration: none; color: inherit; width: 100%; height: 100%; min-height: 38px; box-sizing: border-box; padding: 2px 0; }
+    .mma-cal-mon td.day.has.sel { background: #dc2626 !important; color: #fff !important; border: 1px solid #991b1b !important; }
+    .mma-cal-mon td.day.has.sel .cnt, .mma-cal-mon td.day.has.sel .dn { color: #fff !important; }
+    """
     css = """
     .mma-cal-wrap { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; font-size: 13px; color: #1a1a2e; }
-    .mma-cal-row { display: flex; flex-wrap: wrap; gap: 12px; justify-content: flex-start; }
-    .mma-cal-col { flex: 1 1 220px; min-width: 200px; background: #f6f8fc; border-radius: 8px; padding: 8px 10px 12px; border: 1px solid #d8dee9; }
+    .mma-cal-row { display: flex; flex-wrap: nowrap; gap: 12px; justify-content: flex-start; overflow-x: auto;
+      padding-bottom: 8px; -webkit-overflow-scrolling: touch; }
+    .mma-cal-col { flex: 0 0 auto; width: 232px; min-width: 232px; background: #f6f8fc; border-radius: 8px; padding: 8px 10px 12px; border: 1px solid #d8dee9; }
     .mma-cal-hdr { font-weight: 600; margin-bottom: 6px; color: #111827; }
-    .mma-cal-mon table { width: 100%; border-collapse: collapse; }
+    .mma-cal-mon table { width: 100%; border-collapse: collapse; table-layout: fixed; }
     .mma-cal-mon th { font-size: 11px; font-weight: 500; color: #6b7280; padding: 4px 2px; }
-    .mma-cal-mon td { height: 34px; text-align: center; vertical-align: middle; border-radius: 4px; }
+    .mma-cal-mon td { height: 40px; text-align: center; vertical-align: middle; border-radius: 4px; }
     .mma-cal-mon td.pad { background: transparent; }
     .mma-cal-mon td.day { color: #4b5563; }
-    .mma-cal-mon td.day.has { background: #dbeafe; color: #1e3a8a; font-weight: 600; cursor: default; border: 1px solid #93c5fd; }
+    .mma-cal-mon td.day.has { background: #dbeafe; color: #1e3a8a; font-weight: 600; border: 1px solid #93c5fd; }
     .mma-cal-mon td.day .cnt { display: block; font-size: 10px; line-height: 1.1; color: #2563eb; }
     .mma-cal-mon td.day .dn { font-size: 13px; }
     .mma-cal-leg { margin-top: 10px; font-size: 12px; color: #6b7280; }
     """
+    if pickable:
+        css += css_pick
     leg = (
         "Cell <strong>number</strong> = fights on that <strong>US/Eastern</strong> card date. "
         "Hover a shaded day for matchups and <strong>book favourite / underdog with American odds</strong> when available. "
         "There is no official <strong>winner</strong> until after the bout. Data from The Odds API."
     )
+    if pickable:
+        leg += " <strong>Click</strong> a shaded day to set <strong>Event date</strong> and load that card."
     return (
         f"<style>{css}</style>"
         f'<div class="mma-cal-wrap"><div class="mma-cal-row">{cols}</div>'
         f'<p class="mma-cal-leg">{leg}</p></div>'
     )
+
+
+def consume_mma_calendar_url_pick(schedule_df: pd.DataFrame, *, future_session_key: str) -> None:
+    """Apply ``?mma_cal_pick=YYYY-MM-DD`` once: sync session state, drop the query key, rerun."""
+    import streamlit as st
+
+    from utils.ufc_upcoming_odds_api import schedule_df_to_slate_for_day
+
+    key = MMA_CAL_QUERY_KEY
+    if key not in st.query_params:
+        return
+    raw = st.query_params[key]
+    if isinstance(raw, (list, tuple)):
+        raw = raw[0] if raw else None
+    if not raw:
+        try:
+            del st.query_params[key]
+        except Exception:
+            pass
+        st.rerun()
+        return
+    try:
+        d = date.fromisoformat(str(raw))
+    except ValueError:
+        try:
+            del st.query_params[key]
+        except Exception:
+            pass
+        st.rerun()
+        return
+    valid: set[date] = set()
+    for x in schedule_df["card_date"].tolist():
+        if hasattr(x, "date"):
+            x = x.date()
+        if isinstance(x, date):
+            valid.add(x)
+    if d not in valid:
+        try:
+            del st.query_params[key]
+        except Exception:
+            pass
+        st.rerun()
+        return
+    st.session_state.mma_event_date = d
+    slate = schedule_df_to_slate_for_day(schedule_df, d)
+    if slate is not None and not slate.empty:
+        st.session_state[future_session_key] = (d, slate, "odds_api")
+    else:
+        st.session_state.pop(future_session_key, None)
+    try:
+        del st.query_params[key]
+    except Exception:
+        pass
+    st.rerun()
 
 
 def render_pickable_mma_calendar(
@@ -139,28 +263,16 @@ def render_pickable_mma_calendar(
     max_months: int = 4,
 ) -> None:
     """
-    Sunday-first month grids using Streamlit buttons so a **click** sets ``mma_event_date`` and
-    loads the Odds API slate for that US/Eastern card day (from ``schedule_df``, no extra HTTP).
+    Month grids in **HTML table** layout (original style): shaded cells, bout count above day number.
+    Fight days link with ``?mma_cal_pick=…``; :func:`consume_mma_calendar_url_pick` applies the pick.
     """
-    import calendar
-
     import streamlit as st
 
-    from utils.ufc_upcoming_odds_api import schedule_df_to_slate_for_day
+    _: object = (counts, months)  # API compat; grid window follows ``schedule_df`` like ``schedule_calendar_html``.
 
-    months = months[: int(max_months)]
-    if not months:
-        return
+    consume_mma_calendar_url_pick(schedule_df, future_session_key=future_session_key)
 
-    _, tips = aggregate_counts_and_tooltips(schedule_df)
-
-    def pick_day(d: date) -> None:
-        st.session_state.mma_event_date = d
-        slate = schedule_df_to_slate_for_day(schedule_df, d)
-        if slate is not None and not slate.empty:
-            st.session_state[future_session_key] = (d, slate, "odds_api")
-        else:
-            st.session_state.pop(future_session_key, None)
+    preserved = _preserved_query_excluding_mma()
 
     raw_sel = st.session_state.get("mma_event_date")
     if isinstance(raw_sel, datetime):
@@ -170,43 +282,11 @@ def render_pickable_mma_calendar(
     else:
         sel_d = None
 
-    calobj = calendar.Calendar(firstweekday=calendar.SUNDAY)
-    # One month per row (full app width). Nesting months in st.columns(4) made each
-    # day column ~3% of the viewport — buttons collapsed into narrow pills with vertical text.
-    for mi, (yy, mm) in enumerate(months):
-        if mi:
-            st.divider()
-        st.markdown(f"##### {date(yy, mm, 1).strftime('%B %Y')}")
-        hdr = st.columns(7)
-        for hi, w in enumerate(("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa")):
-            hdr[hi].caption(w)
-        for week in calobj.monthdatescalendar(yy, mm):
-            rowc = st.columns(7)
-            for wi, d in enumerate(week):
-                with rowc[wi]:
-                    if d.month != mm:
-                        continue
-                    n = int(counts.get(d, 0))
-                    if n > 0:
-                        # Single-line label: full-width month row gives each cell ~1/7 of the page
-                        # so "15 · 5" stays horizontal (narrow nested months caused char-by-char wrap).
-                        label = f"{d.day} · {n}"
-                        tip_extra = tips.get(d, "")
-                        if len(tip_extra) > 350:
-                            tip_extra = tip_extra[:347] + "…"
-                        help_txt = (
-                            f"Load {n} fight(s) for {d.isoformat()} (US/Eastern card date). "
-                            + (f"Preview: {tip_extra}" if tip_extra else "")
-                        )
-                        is_sel = sel_d == d
-                        st.button(
-                            label,
-                            key=f"mma_cal_pick_{d.isoformat()}",
-                            use_container_width=True,
-                            type="primary" if is_sel else "secondary",
-                            on_click=pick_day,
-                            args=(d,),
-                            help=help_txt,
-                        )
-                    else:
-                        st.caption(str(d.day))
+    html = schedule_calendar_html(
+        schedule_df,
+        max_months=max_months,
+        pickable=True,
+        selected=sel_d,
+        query_prefix=preserved,
+    )
+    st.markdown(html, unsafe_allow_html=True)
