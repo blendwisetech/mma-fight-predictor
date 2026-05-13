@@ -7,6 +7,10 @@ Combines:
 - **True rate features** from ``events_raw`` per-bout totals (merged onto each row):
   cumulative sig strikes (landed/absorbed), TDs, KD, sub attempts, scaled by **prior**
   cage minutes (or bout counts for submission averages).
+- **Elo-style rating**, **win streak**, **finish mix** (KO / sub / decision share of wins),
+  **last‑3 win rate**, and **avg cage minutes per bout** — all updated only after past
+  bouts resolve (no label leakage).
+- **Stance** (orthodox / southpaw / switch) from the card row for each side.
 
 **Labels**: official ``outcome`` (``fighter1`` / ``fighter2``) vs hash-assigned **Fighter A/B**
 (see ``feature_engineering_mma.side_ab_for_fight``).
@@ -14,7 +18,8 @@ Combines:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -25,6 +30,40 @@ from utils.feature_engineering_mma import (
     side_ab_for_fight,
     weight_class_index,
 )
+
+_ELO_K = 28.0
+
+
+def _finish_bucket(method_raw: object) -> str | None:
+    m = str(method_raw or "").strip().upper()
+    if not m:
+        return None
+    if m.startswith("KO") or m.startswith("KO/"):
+        return "ko"
+    if m.startswith("SUB"):
+        return "sub"
+    if "DEC" in m:
+        return "dec"
+    return None
+
+
+def _stance_encode(raw: object) -> float:
+    s = str(raw or "").strip().lower()
+    if not s or s in ("nan", "none", "--"):
+        return float("nan")
+    if "switch" in s:
+        return 2.0
+    if "south" in s:
+        return 1.0
+    if "orth" in s or "regular" in s or "open" in s:
+        return 0.0
+    return float("nan")
+
+
+def _apply_elo(ra: float, rb: float, *, a_score: float) -> tuple[float, float]:
+    ea = 1.0 / (1.0 + 10 ** ((rb - ra) / 400.0))
+    eb = 1.0 - ea
+    return ra + _ELO_K * (a_score - ea), rb + _ELO_K * ((1.0 - a_score) - eb)
 
 
 @dataclass
@@ -41,6 +80,13 @@ class _Rec:
     cum_kd_land: float = 0.0
     cum_kd_abs: float = 0.0
     cum_sub: float = 0.0
+    # Opponent-adjusted / style (updated only in ``ingest_after_row`` after a bout resolves).
+    elo: float = 1500.0
+    win_streak: int = 0
+    ko_wins: int = 0
+    sub_wins: int = 0
+    dec_wins: int = 0
+    last3: deque = field(default_factory=lambda: deque(maxlen=3))
 
 
 class PreFightBuilder:
@@ -96,6 +142,36 @@ class PreFightBuilder:
             return float("nan")
         return float(rec.cum_sub / rec.fights)
 
+    @staticmethod
+    def _avg_bout_min(rec: _Rec) -> float:
+        if rec.fights <= 0:
+            return float("nan")
+        return float(rec.cum_min / rec.fights)
+
+    @staticmethod
+    def _l3_win_rate(rec: _Rec) -> float:
+        if not rec.last3 or len(rec.last3) == 0:
+            return float("nan")
+        return float(sum(rec.last3) / len(rec.last3))
+
+    @staticmethod
+    def _ko_rate(rec: _Rec) -> float:
+        if rec.wins <= 0:
+            return float("nan")
+        return float(rec.ko_wins / rec.wins)
+
+    @staticmethod
+    def _sub_rate(rec: _Rec) -> float:
+        if rec.wins <= 0:
+            return float("nan")
+        return float(rec.sub_wins / rec.wins)
+
+    @staticmethod
+    def _dec_rate(rec: _Rec) -> float:
+        if rec.wins <= 0:
+            return float("nan")
+        return float(rec.dec_wins / rec.wins)
+
     def featurize(
         self,
         r: pd.Series,
@@ -144,6 +220,21 @@ class PreFightBuilder:
         kdpm_a, kdpm_b = self._kd_per_min(ra), self._kd_per_min(rb)
         sub_a, sub_b = self._sub_per_fight(ra), self._sub_per_fight(rb)
 
+        st1 = _stance_encode(r.get("fighter1_stance"))
+        st2 = _stance_encode(r.get("fighter2_stance"))
+        if a_is_f1:
+            st_a, st_b = st1, st2
+        else:
+            st_a, st_b = st2, st1
+
+        elo_a, elo_b = float(ra.elo), float(rb.elo)
+        ws_a, ws_b = float(ra.win_streak), float(rb.win_streak)
+        kora, korb = self._ko_rate(ra), self._ko_rate(rb)
+        subra, subrb = self._sub_rate(ra), self._sub_rate(rb)
+        decra, decrb = self._dec_rate(ra), self._dec_rate(rb)
+        avgm_a, avgm_b = self._avg_bout_min(ra), self._avg_bout_min(rb)
+        l3a, l3b = self._l3_win_rate(ra), self._l3_win_rate(rb)
+
         is_wm = 1.0 if "women" in wc.lower() else 0.0
         wc_ix = float(weight_class_index(wc, wc_map))
 
@@ -184,6 +275,22 @@ class PreFightBuilder:
             "f_b_kd_per_min_before": kdpm_b,
             "f_a_sub_per_fight_before": sub_a,
             "f_b_sub_per_fight_before": sub_b,
+            "f_a_elo_before": elo_a,
+            "f_b_elo_before": elo_b,
+            "f_a_win_streak": ws_a,
+            "f_b_win_streak": ws_b,
+            "f_a_ko_rate_before": kora,
+            "f_b_ko_rate_before": korb,
+            "f_a_sub_rate_before": subra,
+            "f_b_sub_rate_before": subrb,
+            "f_a_dec_rate_before": decra,
+            "f_b_dec_rate_before": decrb,
+            "f_a_avg_bout_min_before": avgm_a,
+            "f_b_avg_bout_min_before": avgm_b,
+            "f_a_l3_win_rate_before": l3a,
+            "f_b_l3_win_rate_before": l3b,
+            "f_a_stance_code": st_a,
+            "f_b_stance_code": st_b,
             "f_height_diff_cm": _diff(h_a, h_b),
             "f_reach_diff_cm": _diff(reach_a, reach_b),
             "f_age_diff_y": _diff(age_a, age_b),
@@ -197,6 +304,13 @@ class PreFightBuilder:
             "f_td15_diff": _diff(td15_a, td15_b),
             "f_kdpm_diff": _diff(kdpm_a, kdpm_b),
             "f_sub_pf_diff": _diff(sub_a, sub_b),
+            "f_elo_diff": _diff(elo_a, elo_b),
+            "f_win_streak_diff": _diff(ws_a, ws_b),
+            "f_ko_rate_diff": _diff(kora, korb),
+            "f_sub_rate_diff": _diff(subra, subrb),
+            "f_dec_rate_diff": _diff(decra, decrb),
+            "f_avg_bout_min_diff": _diff(avgm_a, avgm_b),
+            "f_l3_win_rate_diff": _diff(l3a, l3b),
         }
 
         if include_label:
@@ -248,12 +362,39 @@ class PreFightBuilder:
             p2.cum_min += float(dur)
 
         o = str(r.get("outcome") or "").strip().lower()
+        p1, p2 = self._rec(f1), self._rec(f2)
         if o == "fighter1":
-            self._rec(f1).wins += 1
-            self._rec(f2).losses += 1
+            r1, r2 = p1.elo, p2.elo
+            p1.elo, p2.elo = _apply_elo(r1, r2, a_score=1.0)
+            p1.win_streak += 1
+            p2.win_streak = 0
+            p1.last3.append(1.0)
+            p2.last3.append(0.0)
+            bw = _finish_bucket(r.get("method"))
+            if bw == "ko":
+                p1.ko_wins += 1
+            elif bw == "sub":
+                p1.sub_wins += 1
+            elif bw == "dec":
+                p1.dec_wins += 1
+            p1.wins += 1
+            p2.losses += 1
         elif o == "fighter2":
-            self._rec(f2).wins += 1
-            self._rec(f1).losses += 1
+            r1, r2 = p1.elo, p2.elo
+            p1.elo, p2.elo = _apply_elo(r1, r2, a_score=0.0)
+            p2.win_streak += 1
+            p1.win_streak = 0
+            p2.last3.append(1.0)
+            p1.last3.append(0.0)
+            bw = _finish_bucket(r.get("method"))
+            if bw == "ko":
+                p2.ko_wins += 1
+            elif bw == "sub":
+                p2.sub_wins += 1
+            elif bw == "dec":
+                p2.dec_wins += 1
+            p2.wins += 1
+            p1.losses += 1
 
         for nm in (f1, f2):
             p = self._rec(nm)

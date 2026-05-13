@@ -1,8 +1,9 @@
 """
 Ordered tabular features for fight-level ML (**Fighter A** vs **B**).
 
-Pre-fight record book + physicals + **true** striking/grappling rates from merged
-``events_raw`` bout totals (see ``utils.events_raw_merge``).
+Pre-fight record book + physicals + stance + **true** striking/grappling rates from merged
+``events_raw`` bout totals, plus **Elo**, **streak / finish mix**, **recent form**, and **avg bout length**
+from a strict chronological walk (see ``utils.prefight_history``).
 """
 
 from __future__ import annotations
@@ -39,6 +40,22 @@ GAME_FEATURE_NAMES: list[str] = [
     "f_b_kd_per_min_before",
     "f_a_sub_per_fight_before",
     "f_b_sub_per_fight_before",
+    "f_a_elo_before",
+    "f_b_elo_before",
+    "f_a_win_streak",
+    "f_b_win_streak",
+    "f_a_ko_rate_before",
+    "f_b_ko_rate_before",
+    "f_a_sub_rate_before",
+    "f_b_sub_rate_before",
+    "f_a_dec_rate_before",
+    "f_b_dec_rate_before",
+    "f_a_avg_bout_min_before",
+    "f_b_avg_bout_min_before",
+    "f_a_l3_win_rate_before",
+    "f_b_l3_win_rate_before",
+    "f_a_stance_code",
+    "f_b_stance_code",
     "f_height_diff_cm",
     "f_reach_diff_cm",
     "f_age_diff_y",
@@ -52,6 +69,13 @@ GAME_FEATURE_NAMES: list[str] = [
     "f_td15_diff",
     "f_kdpm_diff",
     "f_sub_pf_diff",
+    "f_elo_diff",
+    "f_win_streak_diff",
+    "f_ko_rate_diff",
+    "f_sub_rate_diff",
+    "f_dec_rate_diff",
+    "f_avg_bout_min_diff",
+    "f_l3_win_rate_diff",
 ]
 
 

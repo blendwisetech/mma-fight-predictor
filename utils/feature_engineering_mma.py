@@ -119,6 +119,11 @@ def heuristic_fighter_a_win_prob(row: pd.Series) -> float:
     td = _f(row, "f_td15_diff")
     kd = _f(row, "f_kdpm_diff")
     sb = _f(row, "f_sub_pf_diff")
+    elo_d = _f(row, "f_elo_diff")
+    wst_d = _f(row, "f_win_streak_diff")
+    l3d = _f(row, "f_l3_win_rate_diff")
+    krd = _f(row, "f_ko_rate_diff")
+    avgd = _f(row, "f_avg_bout_min_diff")
 
     z = 0.12
     if np.isfinite(ra) and np.isfinite(rb):
@@ -141,6 +146,16 @@ def heuristic_fighter_a_win_prob(row: pd.Series) -> float:
         z += 0.85 * kd
     if np.isfinite(sb):
         z += 0.18 * sb
+    if np.isfinite(elo_d):
+        z += 0.0018 * elo_d
+    if np.isfinite(wst_d):
+        z += 0.055 * wst_d
+    if np.isfinite(l3d):
+        z += 0.35 * l3d
+    if np.isfinite(krd):
+        z += 0.22 * krd
+    if np.isfinite(avgd):
+        z += -0.028 * avgd
     p = 1.0 / (1.0 + math.exp(-z))
     return float(np.clip(p, 1e-6, 1.0 - 1e-6))
 
