@@ -368,6 +368,30 @@ def _mma_upcoming_calendar_section() -> None:
             "Set **THE_ODDS_API_KEY** (environment or Streamlit Secrets) to load all upcoming MMA fights "
             "from [The Odds API](https://the-odds-api.com) into the calendar and table below."
         )
+        with st.expander("Troubleshooting: key saved in Streamlit but still not detected?", expanded=False):
+            st.markdown(
+                """
+1. **Community Cloud:** open your app → **⋮** → **Settings** → **Secrets**. Save this **exact** TOML (one line, your real key):
+
+```toml
+THE_ODDS_API_KEY = "your-key-here"
+```
+
+2. Click **Save**, then **Reboot app** (or **Manage app → Reboot**). Secrets load only when the Python process starts — a browser refresh is not enough.
+
+3. Key name must match **`THE_ODDS_API_KEY`** (or `ODDS_API_KEY`) at the **top level** of the Secrets file, unless you use a nested block documented below.
+
+4. Alternatively, paste the key in **The Odds API key** under *Upcoming fights* (never commit it to git).
+"""
+            )
+            try:
+                import streamlit as st
+
+                names = sorted(getattr(st.secrets, "keys", lambda: [])())
+                st.caption("Top-level secret **names** visible to this app (values never shown):")
+                st.code("\n".join(names) if names else "(none — Secrets file empty or unreadable)")
+            except Exception as ex:
+                st.caption(f"Could not list secret names: `{ex!s}`")
         return
     try:
         dfu = _cached_upcoming_mma_schedule(api)
@@ -507,10 +531,10 @@ def main() -> None:
         with ck[0]:
             api_key_in = st.text_input(
                 "The Odds API key",
-                value="",
                 type="password",
-                placeholder="Optional if THE_ODDS_API_KEY is set in your environment",
-                help="Sign up at the-odds-api.com (free quota). Never commit keys.",
+                placeholder="Optional if THE_ODDS_API_KEY is set in Secrets / environment",
+                help="Sign up at the-odds-api.com (free quota). Never commit keys. "
+                "If you use Streamlit Secrets, reboot the app after saving — do not rely on this field.",
                 key="odds_api_key_field",
             )
         api_key_use = (api_env or (api_key_in or "").strip()).strip()

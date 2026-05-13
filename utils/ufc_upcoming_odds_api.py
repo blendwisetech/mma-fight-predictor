@@ -32,6 +32,7 @@ PREFERRED_BOOKMAKERS = (
 
 
 def get_odds_api_key() -> str | None:
+    """Resolve The Odds API key from env vars or ``st.secrets`` (Streamlit Cloud / local ``secrets.toml``)."""
     for name in ("THE_ODDS_API_KEY", "ODDS_API_KEY"):
         v = (os.environ.get(name) or "").strip()
         if v:
@@ -40,14 +41,33 @@ def get_odds_api_key() -> str | None:
         import streamlit as st
 
         sec = getattr(st, "secrets", None)
-        if sec is not None:
-            for name in ("THE_ODDS_API_KEY", "ODDS_API_KEY"):
-                if name in sec:
-                    out = str(sec[name]).strip()
-                    if out:
-                        return out
+        if sec is None:
+            return None
+        for name in ("THE_ODDS_API_KEY", "ODDS_API_KEY"):
+            # Prefer dict-style access; ``in`` / ``.get`` behave inconsistently across Streamlit versions.
+            try:
+                raw = sec[name]
+            except Exception:
+                try:
+                    raw = sec.get(name)  # type: ignore[union-attr]
+                except Exception:
+                    raw = None
+            if raw is None:
+                continue
+            s = str(raw).strip()
+            if s:
+                return s
+        # Optional nested TOML: [odds] api_key = "…"
+        try:
+            odds = sec.get("odds")  # type: ignore[union-attr]
+            if isinstance(odds, dict):
+                for k in ("api_key", "THE_ODDS_API_KEY", "ODDS_API_KEY"):
+                    if k in odds and str(odds[k]).strip():
+                        return str(odds[k]).strip()
+        except Exception:
+            pass
     except Exception:
-        pass
+        return None
     return None
 
 
