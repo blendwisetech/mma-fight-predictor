@@ -349,7 +349,8 @@ def _cached_hist():
 
 
 def main() -> None:
-    st.set_page_config(page_title="MMA fight model", layout="wide")
+    if os.environ.get("SPORTS_HUB") != "1":
+        st.set_page_config(page_title="MMA fight model", layout="wide")
     _maybe_autostart_ufcstats_sync()
     st.title("MMA — Fighter A win probability")
     st.caption(

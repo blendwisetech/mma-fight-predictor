@@ -11,5 +11,10 @@ __pycache__/
 
 # Sync / pipeline logs (regenerate locally)
 data/processed/*.log
+**/data/processed/auto_pipeline.log
+**/scripts/smoke_ui_out.txt
 
 .DS_Store
+
+nba_predictor/.venv/
+baseball_predictor/.venv/

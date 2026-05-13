@@ -1,0 +1,16 @@
+{
+  "production": {
+    "win_model_path": null,
+    "win_model_version": "heuristic_net_v1",
+    "win_model_path_wnba": null,
+    "win_model_version_wnba": "heuristic_net_v1",
+    "ml_blend_weight": 0.0,
+    "ml_blend_weight_wnba": 0.0,
+    "notes": "Auto pipeline runs NBA then WNBA merge → train (if enough rows) → eval after logging when the sidebar checkbox is on. ml_blend_weight mixes sklearn with heuristic for NBA; ml_blend_weight_wnba for WNBA after train_win_model_wnba.",
+    "notes_wnba": "Train WNBA classifier from data/processed/training_games_wnba.parquet via python -m ml.train_win_model_wnba"
+  },
+  "training": {
+    "min_rows_win": 40,
+    "min_rows_win_wnba": 40
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "production": {
+    "win_model_path": "data/models/win_gbr.joblib",
+    "runs_model_path": "data/models/runs_mor.joblib",
+    "props_model_path": null,
+    "win_model_version": "hgbm_win_cal_2026-05-13",
+    "runs_model_version": "mor_runs_2026-05-13",
+    "props_model_version": "heuristic_v1",
+    "win_blend_weight": 0.0,
+    "home_win_threshold": 0.38,
+    "trained_on_through": "2026-05-11",
+    "notes": "win_prob_soften + win_prob_abs_cap tame tail probs (see sidebar). Retrain after changing training floors.",
+    "win_prob_soften": 0.5,
+    "win_temperature": 1.06,
+    "win_marginal_lambda": 0.12,
+    "win_marginal_gamma": 0.5355191256830601,
+    "win_prob_abs_cap": 0.36
+  },
+  "training": {
+    "min_rows_win": 80,
+    "min_rows_runs": 80,
+    "rolling_seasons": 3,
+    "win_marginal_lambda_floor": 0.12,
+    "win_marginal_lambda_floor_note": "Minimum \u03bb toward training home-win rate after isotonic+temperature. Set 0.0 for val-only \u03bb.",
+    "win_temperature_floor": 1.06,
+    "win_temperature_floor_note": "Minimum logit temperature T (\u22651). Softens probs when val-optimal T would be 1. Set 1.0 to disable."
+  }
+}

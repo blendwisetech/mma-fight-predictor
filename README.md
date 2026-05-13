@@ -1,45 +1,36 @@
-# MMA fight predictor (Streamlit)
+# Sports predictors (Streamlit hub)
 
-UFC / MMA **fighter win probabilities** from merged historical data (jansen88 CSV + optional ufcstats.com extension) and a trained scikit-learn model.
+One Streamlit app with **MMA (UFC)**, **NBA / WNBA**, and **MLB** predictors. Use the sidebar **League** control to switch; each league keeps its own `data/` tree under this repo.
 
-## Run locally
+## Run locally (hub)
 
 ```bash
-cd mma_predictor
+cd mma_predictor   # repo root (historical folder name)
 python -m venv .venv
 .venv\Scripts\activate   # Windows
 pip install -r requirements.txt
-python -m utils.ufc_historical download
+python -m utils.ufc_historical download   # MMA raw CSVs if missing
+streamlit run Home.py
+```
+
+MMA-only (no hub sidebar):
+
+```bash
 streamlit run app/main.py
 ```
 
-Optional: set `THE_ODDS_API_KEY` for **Fetch MMA matchups** (The Odds API). For local dev you can copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` and fill the key.
+NBA/WNBA or MLB alone: `cd nba_predictor` or `cd baseball_predictor` then `streamlit run app/main.py`.
 
 ## Deploy on Streamlit Community Cloud
 
-1. Push this repository to GitHub (this folder is the repo root).
-2. In [Streamlit Cloud](https://streamlit.io/cloud), **New app** → pick the repo.
-3. **Main file path:** `app/main.py`
-4. **Python version:** 3.11+ (3.13 if available is fine).
-5. **Secrets:** App settings → Secrets, add:
+1. Repo: **blendwisetech/mma-fight-predictor** (or your fork).
+2. **Main file path:** `Home.py` (not `app/main.py`) so all three sports load.
+3. **Secrets** (optional): `THE_ODDS_API_KEY` for MMA **Fetch MMA matchups** — same as before (`utils/ufc_upcoming_odds_api.py`).
 
-   ```toml
-   THE_ODDS_API_KEY = "your-key"
-   ```
+Cold start / data: each subproject can download or refresh from its UI; MMA bundles `data/raw` + models when committed.
 
-   The app reads this via `st.secrets` (see `utils/ufc_upcoming_odds_api.py`).
+## Notes
 
-6. **Cold start:** On first load the app uses bundled `data/raw` and `data/models` when present; otherwise run **Refresh UFC CSV cache** in the UI or `python -m utils.ufc_historical download` in a one-off job.
-
-**Note:** Background **ufcstats.com** sync can run many minutes and uses ephemeral disk on Cloud; for production-scale refresh, prefer running sync on your machine or in GitHub Actions, then committing updated `ufcstats_extension.parquet`, or using external object storage.
-
-## Training (optional)
-
-```bash
-python -m ml.seed_training_from_history_mma
-python -m ml.train_win_model_mma
-```
-
-## License
-
-Use at your own risk; not financial advice. Respect [ufcstats.com](http://www.ufcstats.com) and data providers’ terms.
+- **Switching leagues** reloads Python modules from that folder only (top-level `utils` / `ml` / `models` names would clash without this).
+- **Ufcstats** background sync on Cloud is still best-effort on ephemeral disk; see MMA docs in `app/main.py` docstring.
+- Not financial advice; respect data providers’ terms.
