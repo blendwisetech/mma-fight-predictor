@@ -20,7 +20,6 @@ Continuous learning (after logging predictions on past cards)::
 
 from __future__ import annotations
 
-import io
 import os
 import sys
 import time
@@ -153,56 +152,6 @@ def _bet_lean_label(pick: str, ev_u: float, dec_pick: float) -> str:
     if ev_u < -0.002:
         return "No +EV"
     return "~Fair"
-
-
-_MANUAL_SLATE_CSV_EXAMPLE = """fighter1,fighter2,weight_class,event_name,favourite,underdog,favourite_odds,underdog_odds
-Fighter A,Fighter B,Lightweight,My UFC Card,Fighter A,Fighter B,1.72,2.15"""
-
-
-def _parse_manual_upcoming_slate(
-    text: str,
-    pick: date,
-    default_event_name: str,
-) -> pd.DataFrame | None:
-    raw = (text or "").strip()
-    if not raw:
-        return None
-    try:
-        df = pd.read_csv(io.StringIO(raw))
-    except Exception as e:
-        st.error(f"Could not parse CSV: {e}")
-        return None
-    need = ("fighter1", "fighter2", "weight_class")
-    missing = [c for c in need if c not in df.columns]
-    if missing:
-        st.error(f"Missing columns {missing}. Required: fighter1, fighter2, weight_class. Optional: event_date, event_name, favourite, underdog, favourite_odds, underdog_odds.")
-        return None
-    df = df.copy()
-    df["fighter1"] = df["fighter1"].astype(str).str.strip()
-    df["fighter2"] = df["fighter2"].astype(str).str.strip()
-    df["weight_class"] = df["weight_class"].astype(str).str.strip()
-    df = df[(df["fighter1"] != "") & (df["fighter2"] != "")]
-    if df.empty:
-        st.error("No valid fighter rows after stripping blanks.")
-        return None
-    if "event_date" in df.columns:
-        ed = pd.to_datetime(df["event_date"], errors="coerce")
-        df["event_date"] = ed.dt.strftime("%Y-%m-%d")
-        df.loc[ed.isna(), "event_date"] = pick.strftime("%Y-%m-%d")
-    else:
-        df["event_date"] = pick.strftime("%Y-%m-%d")
-    if "event_name" not in df.columns:
-        df["event_name"] = default_event_name
-    df["event_name"] = df["event_name"].fillna(default_event_name).astype(str)
-    for odds_col in ("favourite_odds", "underdog_odds"):
-        if odds_col not in df.columns:
-            df[odds_col] = np.nan
-    for name_col in ("favourite", "underdog"):
-        if name_col not in df.columns:
-            df[name_col] = np.nan
-    df["outcome"] = np.nan
-    df["_idx"] = np.arange(len(df))
-    return df
 
 
 def _pick_and_confidence(fighter_a: str, fighter_b: str, p_a: float) -> tuple[str, float]:
@@ -661,27 +610,13 @@ def main() -> None:
             except Exception as e:
                 st.error(f"Odds API error: {e!s}")
 
-        with st.expander("Or — paste custom card (CSV)", expanded=future_source is None):
-            st.markdown(
-                "One row per fight. **Required:** `fighter1`, `fighter2`, `weight_class`. "
-                "**Optional:** `event_date`, `event_name`, `favourite`, `underdog`, `favourite_odds`, `underdog_odds` (decimal). "
-                "Match **favourite/underdog** names to fighters for prices and **Bet?** / EV."
-            )
-            st.code(_MANUAL_SLATE_CSV_EXAMPLE, language="csv")
-            evt_title = st.text_input("Default event title (if row has no event_name)", value="Upcoming / manual card")
-            pasted = st.text_area("CSV text", height=180, key="manual_slate_csv")
-            if st.button("Load pasted card", type="primary"):
-                manual_df = _parse_manual_upcoming_slate(pasted, pick, evt_title)
-                if manual_df is not None:
-                    st.session_state[_FUTURE_SLATE_SESSION_KEY] = (pick, manual_df, "paste")
-                    st.rerun()
-            bundle_prev = st.session_state.get(_FUTURE_SLATE_SESSION_KEY)
-            b_pick_prev, _, _ = _unpack_future_bundle(bundle_prev)
-            if b_pick_prev is not None and b_pick_prev != pick:
-                st.caption(f"Saved slate is for **{b_pick_prev}** — fetch or paste again for **{pick}**.")
-            if future_source and st.button("Clear loaded slate"):
-                st.session_state.pop(_FUTURE_SLATE_SESSION_KEY, None)
-                st.rerun()
+        bundle_prev = st.session_state.get(_FUTURE_SLATE_SESSION_KEY)
+        b_pick_prev, _, _ = _unpack_future_bundle(bundle_prev)
+        if b_pick_prev is not None and b_pick_prev != pick:
+            st.caption(f"Saved slate is for **{b_pick_prev}** — fetch again for **{pick}**.")
+        if future_source and st.button("Clear loaded slate"):
+            st.session_state.pop(_FUTURE_SLATE_SESSION_KEY, None)
+            st.rerun()
 
         if slate.empty:
             return
@@ -769,7 +704,9 @@ def main() -> None:
     provenance_lbl = (
         ""
         if future_source is None
-        else (" · Odds API" if future_source == "odds_api" else " · pasted CSV")
+        else " · Odds API"
+        if future_source == "odds_api"
+        else " · saved slate"
     )
     st.subheader(f"Slate — {pick} ({len(disp_view)} fights){provenance_lbl}")
     st.caption(
