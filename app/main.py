@@ -722,11 +722,28 @@ def main() -> None:
         column_config=_fight_table_column_config(),
     )
 
-    options = [_multiselect_label(r) for r in rows_out]
-    choice_map = {options[i]: rows_out[i] for i in range(len(options))}
-    picked = st.multiselect("Pick fights to focus / log", options=options, default=[])
-    if picked:
-        sub = disp_view[disp_view["fight_id"].isin({choice_map[p]["fight_id"] for p in picked})]
+    if st.session_state.get("_mma_slate_pick_sync_date") != pick:
+        st.session_state["_mma_slate_pick_sync_date"] = pick
+        st.session_state["_mma_picked_fight_ids"] = []
+
+    pick_ns = str(pick).replace("-", "_")
+    st.markdown("**Pick fights to focus / log** — check rows, then click **Pick fights**.")
+    for r in rows_out:
+        fid = str(r["fight_id"])
+        st.checkbox(_multiselect_label(r), key=f"mma_sf_{pick_ns}_{fid}")
+
+    if st.button("Pick fights"):
+        chosen = [
+            str(r["fight_id"])
+            for r in rows_out
+            if st.session_state.get(f"mma_sf_{pick_ns}_{str(r['fight_id'])}", False)
+        ]
+        st.session_state["_mma_picked_fight_ids"] = chosen
+
+    picked_ids = [str(x) for x in (st.session_state.get("_mma_picked_fight_ids") or [])]
+    if picked_ids:
+        fid_set = set(picked_ids)
+        sub = disp_view[disp_view["fight_id"].astype(str).isin(fid_set)]
         st.subheader("Selected")
         st.dataframe(
             sub[_SLATE_DISPLAY_COLS],
@@ -738,9 +755,9 @@ def main() -> None:
         if st.button("Append predictions for selected fights (CSV log)", type="primary"):
             log_rows = []
             ts = utc_now_iso()
-            for p in picked:
-                base = choice_map[p]
-                d = by_id[base["fight_id"]]
+            for fid in picked_ids:
+                base = next(r for r in rows_out if str(r["fight_id"]) == fid)
+                d = by_id[str(base["fight_id"])]
                 s = pd.Series(d)
                 ph = heuristic_fighter_a_win_prob(s)
                 p_ml, ver = predict_fighter_a_win_ml(s, win_b, reg)
