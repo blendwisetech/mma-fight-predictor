@@ -408,8 +408,8 @@ def _mma_upcoming_calendar_section() -> None:
     """Odds API: multi-month grids + table of all upcoming fights (US/Eastern card dates)."""
     st.subheader("Upcoming fight calendar")
     st.caption(
-        "These bouts are **not yet fought** (no official winner). **Click** a day with a bout count to set **Event date** "
-        "and load that card below. When a book posts **H2H** prices, the table shows favourite/underdog and odds."
+        "These bouts are **not yet fought** (no official winner). **Click** a shaded calendar cell to set **Event date** "
+        "and load that card below (you may see a quick browser refresh). When a book posts **H2H** prices, the table shows favourite/underdog and odds."
     )
     api = get_odds_api_key()
     if not api:
