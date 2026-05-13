@@ -385,8 +385,6 @@ THE_ODDS_API_KEY = "your-key-here"
 """
             )
             try:
-                import streamlit as st
-
                 names = sorted(getattr(st.secrets, "keys", lambda: [])())
                 st.caption("Top-level secret **names** visible to this app (values never shown):")
                 st.code("\n".join(names) if names else "(none — Secrets file empty or unreadable)")
