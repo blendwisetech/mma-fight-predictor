@@ -1,8 +1,8 @@
 """
 Upcoming MMA / UFC matchups from `The Odds API <https://the-odds-api.com/>`_.
 
-Requires **THE_ODDS_API_KEY** or **ODDS_API_KEY** from the environment, or the same keys in **Streamlit secrets** (Community Cloud / local ``secrets.toml``).
-Fights are matched to the selected calendar day using **America/New_York** (typical US card date).
+Requires **THE_ODDS_API_KEY** or **ODDS_API_KEY** from the environment, or the same keys in **Streamlit secrets**
+(top level or under ``[api]`` / ``[odds]``). Fights are matched to the selected calendar day using **America/New_York**.
 """
 
 from __future__ import annotations
@@ -57,15 +57,29 @@ def get_odds_api_key() -> str | None:
             s = str(raw).strip()
             if s:
                 return s
-        # Optional nested TOML: [odds] api_key = "…"
-        try:
-            odds = sec.get("odds")  # type: ignore[union-attr]
-            if isinstance(odds, dict):
-                for k in ("api_key", "THE_ODDS_API_KEY", "ODDS_API_KEY"):
-                    if k in odds and str(odds[k]).strip():
-                        return str(odds[k]).strip()
-        except Exception:
-            pass
+        # Optional nested TOML, e.g. ``[api] THE_ODDS_API_KEY = "…"`` (common in Streamlit Cloud)
+        for section in ("api", "API", "keys", "odds"):
+            block = None
+            try:
+                block = sec[section]
+            except Exception:
+                try:
+                    block = sec.get(section)  # type: ignore[union-attr]
+                except Exception:
+                    pass
+            if block is None:
+                continue
+            for k in ("THE_ODDS_API_KEY", "ODDS_API_KEY", "api_key", "the_odds_api_key"):
+                v = None
+                try:
+                    v = block[k]  # type: ignore[index]
+                except Exception:
+                    try:
+                        v = block.get(k) if hasattr(block, "get") else None  # type: ignore[union-attr]
+                    except Exception:
+                        pass
+                if v is not None and str(v).strip():
+                    return str(v).strip()
     except Exception:
         return None
     return None

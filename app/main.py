@@ -379,7 +379,12 @@ THE_ODDS_API_KEY = "your-key-here"
 
 2. Click **Save**, then **Reboot app** (or **Manage app → Reboot**). Secrets load only when the Python process starts — a browser refresh is not enough.
 
-3. Key name must match **`THE_ODDS_API_KEY`** (or `ODDS_API_KEY`) at the **top level** of the Secrets file, unless you use a nested block documented below.
+3. Key name must match **`THE_ODDS_API_KEY`** (or `ODDS_API_KEY`) at the **top level**, **or** under a **`[api]`** section in Secrets, for example:
+
+```toml
+[api]
+THE_ODDS_API_KEY = "your-key-here"
+```
 
 4. Alternatively, paste the key in **The Odds API key** under *Upcoming fights* (never commit it to git).
 """
