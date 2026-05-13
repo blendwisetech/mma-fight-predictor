@@ -35,7 +35,6 @@ import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
-import streamlit.components.v1 as components
 
 from ml.feature_config_mma import GAME_FEATURE_NAMES
 from ml.win_prob_utils import blended_prob
@@ -57,7 +56,11 @@ from utils.odds_display import (
     format_ev,
     prob_to_fair_decimal,
 )
-from utils.mma_schedule_calendar import schedule_calendar_html
+from utils.mma_schedule_calendar import (
+    aggregate_counts_and_tooltips,
+    display_months_for_counts,
+    render_pickable_mma_calendar,
+)
 from utils.pipeline_runner import start_auto_pipeline_background, start_ufcstats_sync_background
 from utils.prefight_history import PreFightBuilder, featurize_slate_with_builder, walk_history_until_date
 from utils.ufc_historical import load_merged_bout_history
@@ -363,8 +366,8 @@ def _mma_upcoming_calendar_section() -> None:
     """Odds API: multi-month grids + table of all upcoming fights (US/Eastern card dates)."""
     st.subheader("Upcoming fight calendar")
     st.caption(
-        "These bouts are **not yet fought** — there is no official **winner**. When a book posts **H2H** prices, "
-        "the table shows **favourite / underdog** (by implied line) and **decimal + American** odds."
+        "These bouts are **not yet fought** (no official winner). **Click** a day with a bout count to set **Event date** "
+        "and load that card below. When a book posts **H2H** prices, the table shows favourite/underdog and odds."
     )
     api = get_odds_api_key()
     if not api:
@@ -408,13 +411,28 @@ THE_ODDS_API_KEY = "your-key-here"
     if dfu.empty:
         st.info("The Odds API returned no upcoming MMA fights (or every listed bout has already started).")
         return
-    html = schedule_calendar_html(dfu, max_months=4)
-    components.html(html, height=460, scrolling=True)
+    counts, _tips = aggregate_counts_and_tooltips(dfu)
+    months = display_months_for_counts(counts, max_months=4)
+    render_pickable_mma_calendar(
+        dfu,
+        counts,
+        months,
+        future_session_key=_FUTURE_SLATE_SESSION_KEY,
+        max_months=4,
+    )
 
     def _jump_to_card_date() -> None:
         sel = st.session_state.get("_mma_cal_jump_date")
         if sel and sel != "—":
-            st.session_state.mma_event_date = date.fromisoformat(sel)
+            d = date.fromisoformat(sel)
+            st.session_state.mma_event_date = d
+            from utils.ufc_upcoming_odds_api import schedule_df_to_slate_for_day
+
+            slate = schedule_df_to_slate_for_day(dfu, d)
+            if slate is not None and not slate.empty:
+                st.session_state[_FUTURE_SLATE_SESSION_KEY] = (d, slate, "odds_api")
+            else:
+                st.session_state.pop(_FUTURE_SLATE_SESSION_KEY, None)
 
     card_dates = sorted({pd.Timestamp(x).date() for x in dfu["card_date"].tolist()})
     opts = ["—"] + [d.isoformat() for d in card_dates]
@@ -425,7 +443,7 @@ THE_ODDS_API_KEY = "your-key-here"
             opts,
             key="_mma_cal_jump_date",
             on_change=_jump_to_card_date,
-            help="Updates the Event date control below so you can model that card.",
+            help="Sets **Event date** and loads that card’s Odds API slate (same as clicking the calendar).",
         )
     with cr:
         if st.button("Refresh Odds API", help="Clear the 30-minute schedule cache and refetch."):

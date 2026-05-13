@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import calendar
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 from html import escape
 
 import pandas as pd
@@ -64,6 +64,11 @@ def _months_to_display(counts: dict[date, int], *, max_months: int = 4) -> list[
     return months
 
 
+def display_months_for_counts(counts: dict[date, int], *, max_months: int = 4) -> list[tuple[int, int]]:
+    """Public alias: which year/months to show for a fight-count map."""
+    return _months_to_display(counts, max_months=max_months)
+
+
 def _month_grid_html(y: int, m: int, counts: dict[date, int], tips: dict[date, str]) -> str:
     cal = calendar.Calendar(firstweekday=calendar.SUNDAY)
     weeks = cal.monthdatescalendar(y, m)
@@ -96,7 +101,7 @@ def _month_grid_html(y: int, m: int, counts: dict[date, int], tips: dict[date, s
 def schedule_calendar_html(df: pd.DataFrame, *, max_months: int = 4) -> str:
     """Full HTML document fragment: CSS + up to ``max_months`` month grids (Sunday-first, US layout)."""
     counts, tips = aggregate_counts_and_tooltips(df)
-    months = _months_to_display(counts, max_months=max_months)
+    months = display_months_for_counts(counts, max_months=max_months)
     cols = "".join(f'<div class="mma-cal-col">{_month_grid_html(y, m, counts, tips)}</div>' for y, m in months)
     css = """
     .mma-cal-wrap { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; font-size: 13px; color: #1a1a2e; }
@@ -123,3 +128,72 @@ def schedule_calendar_html(df: pd.DataFrame, *, max_months: int = 4) -> str:
         f'<div class="mma-cal-wrap"><div class="mma-cal-row">{cols}</div>'
         f'<p class="mma-cal-leg">{leg}</p></div>'
     )
+
+
+def render_pickable_mma_calendar(
+    schedule_df: pd.DataFrame,
+    counts: dict[date, int],
+    months: list[tuple[int, int]],
+    *,
+    future_session_key: str,
+    max_months: int = 4,
+) -> None:
+    """
+    Sunday-first month grids using Streamlit buttons so a **click** sets ``mma_event_date`` and
+    loads the Odds API slate for that US/Eastern card day (from ``schedule_df``, no extra HTTP).
+    """
+    import calendar
+
+    import streamlit as st
+
+    from utils.ufc_upcoming_odds_api import schedule_df_to_slate_for_day
+
+    months = months[: int(max_months)]
+    if not months:
+        return
+
+    def pick_day(d: date) -> None:
+        st.session_state.mma_event_date = d
+        slate = schedule_df_to_slate_for_day(schedule_df, d)
+        if slate is not None and not slate.empty:
+            st.session_state[future_session_key] = (d, slate, "odds_api")
+        else:
+            st.session_state.pop(future_session_key, None)
+
+    raw_sel = st.session_state.get("mma_event_date")
+    if isinstance(raw_sel, datetime):
+        sel_d: date | None = raw_sel.date()
+    elif type(raw_sel) is date:
+        sel_d = raw_sel
+    else:
+        sel_d = None
+
+    calobj = calendar.Calendar(firstweekday=calendar.SUNDAY)
+    month_cols = st.columns(len(months))
+    for ci, (yy, mm) in enumerate(months):
+        with month_cols[ci]:
+            st.markdown(f"##### {date(yy, mm, 1).strftime('%B %Y')}")
+            hdr = st.columns(7)
+            for hi, w in enumerate(("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa")):
+                hdr[hi].caption(w)
+            for week in calobj.monthdatescalendar(yy, mm):
+                rowc = st.columns(7)
+                for wi, d in enumerate(week):
+                    with rowc[wi]:
+                        if d.month != mm:
+                            continue
+                        n = int(counts.get(d, 0))
+                        if n > 0:
+                            label = f"{d.day} · {n}"
+                            is_sel = sel_d == d
+                            st.button(
+                                label,
+                                key=f"mma_cal_pick_{d.isoformat()}",
+                                use_container_width=True,
+                                type="primary" if is_sel else "secondary",
+                                on_click=pick_day,
+                                args=(d,),
+                                help=f"Load {n} fight(s) for {d.isoformat()} (US/Eastern card date)",
+                            )
+                        else:
+                            st.caption(str(d.day))

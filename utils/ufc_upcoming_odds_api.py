@@ -269,6 +269,42 @@ def mma_events_to_upcoming_schedule_dataframe(
     return out
 
 
+def schedule_df_to_slate_for_day(sched: pd.DataFrame, pick: date) -> pd.DataFrame:
+    """
+    Turn cached Odds API schedule rows for ``pick`` (US/Eastern card date) into the same wide shape as
+    ``mma_events_to_slate_dataframe`` so ``featurize_slate_with_builder`` can consume it.
+    """
+    if sched is None or sched.empty or "card_date" not in sched.columns:
+        return pd.DataFrame()
+    cd_series = pd.to_datetime(sched["card_date"]).dt.date
+    sub = sched.loc[cd_series == pick].copy()
+    if sub.empty:
+        return pd.DataFrame()
+    sub = sub.sort_values(["commence_utc", "_idx"], kind="mergesort")
+    rows: list[dict[str, Any]] = []
+    for i, (_, r) in enumerate(sub.iterrows()):
+        bk = str(r.get("bookmaker") or "").strip() or "book"
+        title = str(r.get("event_title") or "MMA")
+        fd = r.get("favourite_odds_dec")
+        ud = r.get("underdog_odds_dec")
+        rows.append(
+            {
+                "event_date": pick.strftime("%Y-%m-%d"),
+                "event_name": f"{title} (Odds API · {bk})",
+                "weight_class": "Unknown",
+                "fighter1": str(r.get("fighter1") or ""),
+                "fighter2": str(r.get("fighter2") or ""),
+                "favourite": str(r.get("favourite") or ""),
+                "underdog": str(r.get("underdog") or ""),
+                "favourite_odds": float(fd) if pd.notna(fd) else float("nan"),
+                "underdog_odds": float(ud) if pd.notna(ud) else float("nan"),
+                "outcome": float("nan"),
+                "_idx": i,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def fetch_upcoming_mma_schedule(api_key: str, *, only_future: bool = True) -> pd.DataFrame:
     """Convenience: fetch Odds API events and build the upcoming schedule table."""
     events = fetch_mma_odds_events(api_key)
