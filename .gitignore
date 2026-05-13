@@ -1,0 +1,15 @@
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Local secrets (use Streamlit Cloud "Secrets" or env)
+.streamlit/secrets.toml
+
+# Sync / pipeline logs (regenerate locally)
+data/processed/*.log
+
+.DS_Store

@@ -1,0 +1,78 @@
+"""
+Load serialized sklearn models from ``data/models`` and score fight rows.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import joblib
+import numpy as np
+import pandas as pd
+
+from ml.calibration_utils import apply_marginal_shrink, apply_registry_tail_calibration, apply_temperature
+from ml.feature_config_mma import dataframe_X, enriched_row_to_feature_vector
+from utils.data_io import ROOT, load_registry
+
+
+def _bundle(rel_path: str | None) -> dict[str, Any] | None:
+    if not rel_path:
+        return None
+    p = ROOT / rel_path
+    if not p.exists():
+        return None
+    return joblib.load(p)
+
+
+def load_production_pipelines() -> tuple[dict[str, Any], dict[str, Any] | None]:
+    reg = load_registry()
+    prod = reg.get("production", {})
+    return reg, _bundle(prod.get("win_model_path"))
+
+
+def raw_fighter_a_win_prob_batch(win_bundle: dict[str, Any], X: pd.DataFrame) -> np.ndarray:
+    arr = np.asarray(X.to_numpy(dtype=float), dtype=float)
+    if win_bundle.get("base_pipeline") is not None:
+        return win_bundle["base_pipeline"].predict_proba(arr)[:, 1]
+    if win_bundle.get("pipeline") is not None:
+        return win_bundle["pipeline"].predict_proba(arr)[:, 1]
+    raise KeyError("win bundle missing base_pipeline/pipeline")
+
+
+def _win_prob_calibrated(raw: float, win_bundle: dict[str, Any], reg: dict[str, Any] | None = None) -> float:
+    meta = win_bundle.get("meta") or {}
+    T = float(meta.get("win_temperature", meta.get("temperature", 1.0)) or 1.0)
+    lam = float(meta.get("win_marginal_lambda", 0.0) or 0.0)
+    gamma = float(meta.get("win_marginal_gamma", 0.535) or 0.535)
+    r = float(np.clip(float(raw), 1e-6, 1.0 - 1e-6))
+    iso = win_bundle.get("iso")
+    if iso is None:
+        p_iso = r
+    else:
+        p_iso = float(np.clip(iso.predict(np.array([r], dtype=float))[0], 1e-6, 1.0 - 1e-6))
+    p_t = float(apply_temperature(p_iso, T))
+    p = float(apply_marginal_shrink(p_t, lam, gamma))
+    if reg is not None:
+        p = float(apply_registry_tail_calibration(p, reg))
+    return float(np.clip(p, 1e-6, 1.0 - 1e-6))
+
+
+def predict_fighter_a_win_ml(row: pd.Series, win_bundle: dict[str, Any] | None, reg: dict[str, Any]) -> tuple[float | None, str]:
+    prod = reg.get("production", {})
+    ver = str(prod.get("win_model_version", "heuristic_v1"))
+    if not win_bundle:
+        return None, ver
+    if "base_pipeline" not in win_bundle and "pipeline" not in win_bundle:
+        return None, ver
+    X = dataframe_X(pd.DataFrame([enriched_row_to_feature_vector(row)]))
+    try:
+        raw = float(raw_fighter_a_win_prob_batch(win_bundle, X)[0])
+    except Exception:
+        return None, ver
+    p = _win_prob_calibrated(raw, win_bundle, reg)
+    return float(np.clip(p, 1e-6, 1.0 - 1e-6)), str(prod.get("win_model_version", ver))
+
+
+# Back-compat aliases (older modules / notebooks)
+raw_fighter1_win_prob_batch = raw_fighter_a_win_prob_batch
+predict_fighter1_win_ml = predict_fighter_a_win_ml

@@ -1,0 +1,17 @@
+{
+  "training": {
+    "min_rows_win": 400
+  },
+  "production": {
+    "win_model_path": "data/models/win_mma.joblib",
+    "win_model_version": "hgbm_mma_a_2026-05-13",
+    "win_blend_weight": 0.0,
+    "fighter1_win_threshold": 0.47,
+    "home_win_threshold": 0.47,
+    "win_temperature": 1.0,
+    "win_marginal_lambda": 0.08,
+    "win_marginal_gamma": 0.5078295341922696,
+    "trained_on_through": "2023-09-16",
+    "fighter_a_win_threshold": 0.47
+  }
+}
