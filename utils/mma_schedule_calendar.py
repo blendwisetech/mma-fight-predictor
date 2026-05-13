@@ -152,6 +152,8 @@ def render_pickable_mma_calendar(
     if not months:
         return
 
+    _, tips = aggregate_counts_and_tooltips(schedule_df)
+
     def pick_day(d: date) -> None:
         st.session_state.mma_event_date = d
         slate = schedule_df_to_slate_for_day(schedule_df, d)
@@ -169,31 +171,42 @@ def render_pickable_mma_calendar(
         sel_d = None
 
     calobj = calendar.Calendar(firstweekday=calendar.SUNDAY)
-    month_cols = st.columns(len(months))
-    for ci, (yy, mm) in enumerate(months):
-        with month_cols[ci]:
-            st.markdown(f"##### {date(yy, mm, 1).strftime('%B %Y')}")
-            hdr = st.columns(7)
-            for hi, w in enumerate(("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa")):
-                hdr[hi].caption(w)
-            for week in calobj.monthdatescalendar(yy, mm):
-                rowc = st.columns(7)
-                for wi, d in enumerate(week):
-                    with rowc[wi]:
-                        if d.month != mm:
-                            continue
-                        n = int(counts.get(d, 0))
-                        if n > 0:
-                            label = f"{d.day} · {n}"
-                            is_sel = sel_d == d
-                            st.button(
-                                label,
-                                key=f"mma_cal_pick_{d.isoformat()}",
-                                use_container_width=True,
-                                type="primary" if is_sel else "secondary",
-                                on_click=pick_day,
-                                args=(d,),
-                                help=f"Load {n} fight(s) for {d.isoformat()} (US/Eastern card date)",
-                            )
-                        else:
-                            st.caption(str(d.day))
+    # One month per row (full app width). Nesting months in st.columns(4) made each
+    # day column ~3% of the viewport — buttons collapsed into narrow pills with vertical text.
+    for mi, (yy, mm) in enumerate(months):
+        if mi:
+            st.divider()
+        st.markdown(f"##### {date(yy, mm, 1).strftime('%B %Y')}")
+        hdr = st.columns(7)
+        for hi, w in enumerate(("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa")):
+            hdr[hi].caption(w)
+        for week in calobj.monthdatescalendar(yy, mm):
+            rowc = st.columns(7)
+            for wi, d in enumerate(week):
+                with rowc[wi]:
+                    if d.month != mm:
+                        continue
+                    n = int(counts.get(d, 0))
+                    if n > 0:
+                        # Single-line label: full-width month row gives each cell ~1/7 of the page
+                        # so "15 · 5" stays horizontal (narrow nested months caused char-by-char wrap).
+                        label = f"{d.day} · {n}"
+                        tip_extra = tips.get(d, "")
+                        if len(tip_extra) > 350:
+                            tip_extra = tip_extra[:347] + "…"
+                        help_txt = (
+                            f"Load {n} fight(s) for {d.isoformat()} (US/Eastern card date). "
+                            + (f"Preview: {tip_extra}" if tip_extra else "")
+                        )
+                        is_sel = sel_d == d
+                        st.button(
+                            label,
+                            key=f"mma_cal_pick_{d.isoformat()}",
+                            use_container_width=True,
+                            type="primary" if is_sel else "secondary",
+                            on_click=pick_day,
+                            args=(d,),
+                            help=help_txt,
+                        )
+                    else:
+                        st.caption(str(d.day))
