@@ -163,8 +163,10 @@ def schedule_calendar_html(
     )
     css_pick = """
     .mma-cal-mon td.day.has { cursor: pointer; }
-    .mma-cal-mon td.day.has a.mma-cal-pick { display: flex; flex-direction: column; align-items: center; justify-content: center;
-      text-decoration: none; color: inherit; width: 100%; height: 100%; min-height: 38px; box-sizing: border-box; padding: 2px 0; }
+    .mma-cal-mon td.day.has a.mma-cal-pick {
+      display: flex; flex-direction: column; flex-wrap: nowrap; align-items: center; justify-content: center;
+      text-decoration: none; color: inherit; width: 100%; height: 100%; min-height: 38px; box-sizing: border-box;
+      padding: 2px 0; white-space: nowrap; }
     .mma-cal-mon td.day.has.sel { background: #dc2626 !important; color: #fff !important; border: 1px solid #991b1b !important; }
     .mma-cal-mon td.day.has.sel .cnt, .mma-cal-mon td.day.has.sel .dn { color: #fff !important; }
     """
@@ -172,16 +174,17 @@ def schedule_calendar_html(
     .mma-cal-wrap { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; font-size: 13px; color: #1a1a2e; }
     .mma-cal-row { display: flex; flex-wrap: nowrap; gap: 12px; justify-content: flex-start; overflow-x: auto;
       padding-bottom: 8px; -webkit-overflow-scrolling: touch; }
-    .mma-cal-col { flex: 0 0 auto; width: 232px; min-width: 232px; background: #f6f8fc; border-radius: 8px; padding: 8px 10px 12px; border: 1px solid #d8dee9; }
+    .mma-cal-col { flex: 0 0 auto; width: auto; min-width: 296px; background: #f6f8fc; border-radius: 8px; padding: 8px 10px 12px; border: 1px solid #d8dee9; }
     .mma-cal-hdr { font-weight: 600; margin-bottom: 6px; color: #111827; }
-    .mma-cal-mon table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    .mma-cal-mon th { font-size: 11px; font-weight: 500; color: #6b7280; padding: 4px 2px; }
-    .mma-cal-mon td { height: 40px; text-align: center; vertical-align: middle; border-radius: 4px; }
-    .mma-cal-mon td.pad { background: transparent; }
+    .mma-cal-mon table { width: 100%; border-collapse: collapse; table-layout: auto; min-width: 276px; }
+    .mma-cal-mon th { font-size: 11px; font-weight: 500; color: #6b7280; padding: 4px 3px; white-space: nowrap; }
+    .mma-cal-mon td { height: 40px; text-align: center; vertical-align: middle; border-radius: 4px;
+      padding: 4px 3px; box-sizing: border-box; min-width: 2.5rem; white-space: nowrap; }
+    .mma-cal-mon td.pad { background: transparent; min-width: 2.5rem; }
     .mma-cal-mon td.day { color: #4b5563; }
     .mma-cal-mon td.day.has { background: #dbeafe; color: #1e3a8a; font-weight: 600; border: 1px solid #93c5fd; }
-    .mma-cal-mon td.day .cnt { display: block; font-size: 10px; line-height: 1.1; color: #2563eb; }
-    .mma-cal-mon td.day .dn { font-size: 13px; }
+    .mma-cal-mon td.day .cnt { display: block; font-size: 10px; line-height: 1.15; color: #2563eb; white-space: nowrap; }
+    .mma-cal-mon td.day .dn { font-size: 13px; line-height: 1.15; white-space: nowrap; display: inline-block; }
     .mma-cal-leg { margin-top: 10px; font-size: 12px; color: #6b7280; }
     """
     if pickable:
