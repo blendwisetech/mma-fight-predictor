@@ -362,6 +362,10 @@ def _cached_upcoming_mma_schedule(api_key: str) -> pd.DataFrame:
 def _mma_upcoming_calendar_section() -> None:
     """Odds API: multi-month grids + table of all upcoming fights (US/Eastern card dates)."""
     st.subheader("Upcoming fight calendar")
+    st.caption(
+        "These bouts are **not yet fought** — there is no official **winner**. When a book posts **H2H** prices, "
+        "the table shows **favourite / underdog** (by implied line) and **decimal + American** odds."
+    )
     api = get_odds_api_key()
     if not api:
         st.caption(
@@ -429,7 +433,45 @@ THE_ODDS_API_KEY = "your-key-here"
             st.rerun()
 
     show = dfu.drop(columns=["commence_utc", "_idx"], errors="ignore").copy()
-    st.dataframe(show, hide_index=True, use_container_width=True)
+    _order = [
+        "card_date",
+        "commence_et_str",
+        "fighter1",
+        "fighter2",
+        "bookmaker",
+        "favourite",
+        "underdog",
+        "favourite_odds_dec",
+        "underdog_odds_dec",
+        "favourite_american",
+        "underdog_american",
+        "has_h2h_odds",
+        "event_title",
+    ]
+    show = show[[c for c in _order if c in show.columns]]
+    show = show.rename(
+        columns={
+            "commence_et_str": "Start (ET)",
+            "bookmaker": "Book",
+            "favourite_odds_dec": "Fav dec",
+            "underdog_odds_dec": "Dog dec",
+            "favourite_american": "Fav US",
+            "underdog_american": "Dog US",
+            "has_h2h_odds": "Has H2H",
+        }
+    )
+    st.dataframe(
+        show,
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "Fav dec": st.column_config.NumberColumn("Fav dec", format="%.2f", help="Favourite decimal odds (H2H)."),
+            "Dog dec": st.column_config.NumberColumn("Dog dec", format="%.2f", help="Underdog decimal odds (H2H)."),
+            "Fav US": st.column_config.NumberColumn("Fav US", format="%.0f", help="Favourite American moneyline."),
+            "Dog US": st.column_config.NumberColumn("Dog US", format="%.0f", help="Underdog American moneyline."),
+            "Has H2H": st.column_config.CheckboxColumn("Has H2H", help="Book offered a parseable two-way H2H market."),
+        },
+    )
 
 
 def main() -> None:

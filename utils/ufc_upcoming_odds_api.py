@@ -16,6 +16,7 @@ import pandas as pd
 import requests
 
 from utils.feature_engineering_mma import normalize_name
+from utils.odds_display import decimal_to_american
 
 NY = ZoneInfo("America/New_York")
 ODDS_URL = "https://api.the-odds-api.com/v4/sports/mma_mixed_martial_arts/odds"
@@ -228,7 +229,18 @@ def mma_events_to_upcoming_schedule_dataframe(
         if only_future and ct < now:
             continue
         bm = _pick_bookmaker(ev.get("bookmakers") or [])
-        has_h2h = bm is not None and _favourite_underdog_from_h2h(bm, home, away) is not None
+        sides = _favourite_underdog_from_h2h(bm, home, away) if bm is not None else None
+        fav_n = dog_n = ""
+        d_fav = d_und = float("nan")
+        am_f = am_d = float("nan")
+        book_title = ""
+        if bm is not None:
+            book_title = str(bm.get("title") or bm.get("key") or "")
+        if sides is not None:
+            fav_n, dog_n, d_fav, d_und = sides
+            am_f = decimal_to_american(float(d_fav))
+            am_d = decimal_to_american(float(d_und))
+        has_h2h = sides is not None
         title = str(ev.get("sport_title") or "MMA")
         commence_ny = ct.tz_convert(NY)
         rows.append(
@@ -238,6 +250,13 @@ def mma_events_to_upcoming_schedule_dataframe(
                 "commence_et_str": commence_ny.strftime("%a %b %d · %H:%M ET"),
                 "fighter1": home,
                 "fighter2": away,
+                "bookmaker": book_title,
+                "favourite": fav_n,
+                "underdog": dog_n,
+                "favourite_odds_dec": float(d_fav) if has_h2h else float("nan"),
+                "underdog_odds_dec": float(d_und) if has_h2h else float("nan"),
+                "favourite_american": float(am_f) if has_h2h else float("nan"),
+                "underdog_american": float(am_d) if has_h2h else float("nan"),
                 "has_h2h_odds": bool(has_h2h),
                 "event_title": title,
                 "_idx": ix,

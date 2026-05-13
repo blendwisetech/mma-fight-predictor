@@ -9,6 +9,8 @@ from html import escape
 
 import pandas as pd
 
+from utils.odds_display import format_american
+
 
 def aggregate_counts_and_tooltips(df: pd.DataFrame) -> tuple[dict[date, int], dict[date, str]]:
     """Per **US/Eastern card date**: fight count and a short hover summary."""
@@ -26,8 +28,17 @@ def aggregate_counts_and_tooltips(df: pd.DataFrame) -> tuple[dict[date, int], di
         if len(lines[cd]) < 5:
             f1 = str(r.get("fighter1") or "")
             f2 = str(r.get("fighter2") or "")
-            lines[cd].append(f"{f1} vs {f2}")
-    tips = {d: "; ".join(lines[d])[:280] for d in lines}
+            fav = str(r.get("favourite") or "")
+            und = str(r.get("underdog") or "")
+            if bool(r.get("has_h2h_odds")) and fav and und and pd.notna(r.get("favourite_american")):
+                fa = float(r["favourite_american"])
+                ua = float(r["underdog_american"])
+                fav_s = format_american(fa)
+                und_s = format_american(ua)
+                lines[cd].append(f"{f1} vs {f2} ({fav} {fav_s} / {und} {und_s})")
+            else:
+                lines[cd].append(f"{f1} vs {f2}")
+    tips = {d: "; ".join(lines[d])[:400] for d in lines}
     return dict(counts), tips
 
 
@@ -104,7 +115,8 @@ def schedule_calendar_html(df: pd.DataFrame, *, max_months: int = 4) -> str:
     """
     leg = (
         "Cell <strong>number</strong> = fights on that <strong>US/Eastern</strong> card date. "
-        "Hover a shaded day for matchups. Data from The Odds API."
+        "Hover a shaded day for matchups and <strong>book favourite / underdog with American odds</strong> when available. "
+        "There is no official <strong>winner</strong> until after the bout. Data from The Odds API."
     )
     return (
         f"<style>{css}</style>"
