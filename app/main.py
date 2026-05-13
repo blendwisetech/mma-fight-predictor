@@ -16,6 +16,9 @@ Continuous learning (after logging predictions on past cards)::
 
   python -m ml.backfill_outcomes_from_history_mma
   python -m ml.auto_pipeline
+
+With **Auto merge / train / eval** enabled in the app, logging predictions starts the same pipeline in the background.
+Set ``MMA_AUTO_PIPELINE=0`` to default that toggle off.
 """
 
 from __future__ import annotations
@@ -38,7 +41,7 @@ import streamlit as st
 from ml.feature_config_mma import GAME_FEATURE_NAMES
 from ml.win_prob_utils import blended_prob
 from models.ml_predict_mma import load_production_pipelines, predict_fighter_a_win_ml
-from utils.data_io import append_predictions_df, load_eval_report, utc_now_iso
+from utils.data_io import append_predictions_df, load_eval_report, load_registry, utc_now_iso
 from utils.feature_engineering_mma import (
     fight_id_for_row,
     fit_weight_class_map,
@@ -505,6 +508,14 @@ def main() -> None:
     hist_sorted = hist.sort_values(["event_date", "event_name", "_idx"], kind="mergesort")
     wc_map = _ensure_wc_map(hist)
 
+    if "mma_auto_pipeline_bg" not in st.session_state:
+        st.session_state["mma_auto_pipeline_bg"] = (os.environ.get("MMA_AUTO_PIPELINE") or "1").strip().lower() not in (
+            "0",
+            "false",
+            "no",
+            "off",
+        )
+
     c0, c1, c2, c3 = st.columns(4)
     with c0:
         if st.button("Refresh UFC CSV cache", help="Re-download complete_ufc_data + events_raw"):
@@ -526,6 +537,18 @@ def main() -> None:
         if st.button("Reload history cache", help="Clear Streamlit cache so ufcstats extension is picked up."):
             st.cache_data.clear()
             st.rerun()
+    st.checkbox(
+        "Auto merge / train / eval after logging predictions",
+        key="mma_auto_pipeline_bg",
+        help="After you append prediction rows, runs merge → train_win_model_mma → evaluate_models_mma in a background thread. "
+        "Log: data/processed/auto_pipeline.log. Set env **MMA_AUTO_PIPELINE=0** to start with this unchecked.",
+    )
+    train_cfg = load_registry().get("training") or {}
+    _min_mma = int(train_cfg.get("min_rows_win", 400))
+    st.caption(
+        f"Training step only updates the model when merged labeled rows ≥ **`{_min_mma}`** "
+        f"(`data/models/registry.json` → `training.min_rows_win`). You can still run **Run merge → train → eval** manually."
+    )
     ext_m = _extension_freshness_blurb()
     if ext_m:
         st.caption(
@@ -788,11 +811,18 @@ def main() -> None:
                 log_rows.append(rec)
             append_predictions_df(pd.DataFrame(log_rows))
             st.success(f"Logged {len(log_rows)} prediction rows.")
+            if st.session_state.get("mma_auto_pipeline_bg", True):
+                start_auto_pipeline_background()
+                st.caption(
+                    "Started background **merge → train → eval** — see `data/processed/auto_pipeline.log`."
+                )
 
     st.divider()
     st.subheader("Outcomes + retrain")
     st.write(
-        "For **past** cards, run ``python -m ml.backfill_outcomes_from_history_mma`` then ``python -m ml.auto_pipeline``."
+        "For **past** cards, run ``python -m ml.backfill_outcomes_from_history_mma`` to label outcomes, then either "
+        "enable **Auto merge / train / eval** above and log another prediction, or run ``python -m ml.auto_pipeline`` "
+        "or the **Run merge → train → eval** button."
     )
     st.subheader("Cold-start training (historical)")
     st.code(
