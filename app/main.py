@@ -35,6 +35,7 @@ import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 
 from ml.feature_config_mma import GAME_FEATURE_NAMES
 from ml.win_prob_utils import blended_prob
@@ -56,10 +57,15 @@ from utils.odds_display import (
     format_ev,
     prob_to_fair_decimal,
 )
+from utils.mma_schedule_calendar import schedule_calendar_html
 from utils.pipeline_runner import start_auto_pipeline_background, start_ufcstats_sync_background
 from utils.prefight_history import PreFightBuilder, featurize_slate_with_builder, walk_history_until_date
 from utils.ufc_historical import load_merged_bout_history
-from utils.ufc_upcoming_odds_api import fetch_mma_slate_for_event_date, get_odds_api_key
+from utils.ufc_upcoming_odds_api import (
+    fetch_mma_slate_for_event_date,
+    fetch_upcoming_mma_schedule,
+    get_odds_api_key,
+)
 
 _FUTURE_SLATE_SESSION_KEY = "_mma_future_slate"
 _EXTENSION_PARQUET = _ROOT / "data" / "raw" / "ufcstats_extension.parquet"
@@ -348,6 +354,57 @@ def _cached_hist():
     return load_merged_bout_history()
 
 
+@st.cache_data(ttl=1800, show_spinner="Loading upcoming MMA (Odds API)…")
+def _cached_upcoming_mma_schedule(api_key: str) -> pd.DataFrame:
+    return fetch_upcoming_mma_schedule(api_key)
+
+
+def _mma_upcoming_calendar_section() -> None:
+    """Odds API: multi-month grids + table of all upcoming fights (US/Eastern card dates)."""
+    st.subheader("Upcoming fight calendar")
+    api = get_odds_api_key()
+    if not api:
+        st.caption(
+            "Set **THE_ODDS_API_KEY** (environment or Streamlit Secrets) to load all upcoming MMA fights "
+            "from [The Odds API](https://the-odds-api.com) into the calendar and table below."
+        )
+        return
+    try:
+        dfu = _cached_upcoming_mma_schedule(api)
+    except Exception as e:
+        st.warning(f"Could not load The Odds API schedule: {e}")
+        return
+    if dfu.empty:
+        st.info("The Odds API returned no upcoming MMA fights (or every listed bout has already started).")
+        return
+    html = schedule_calendar_html(dfu, max_months=4)
+    components.html(html, height=460, scrolling=True)
+
+    def _jump_to_card_date() -> None:
+        sel = st.session_state.get("_mma_cal_jump_date")
+        if sel and sel != "—":
+            st.session_state.mma_event_date = date.fromisoformat(sel)
+
+    card_dates = sorted({pd.Timestamp(x).date() for x in dfu["card_date"].tolist()})
+    opts = ["—"] + [d.isoformat() for d in card_dates]
+    cj, cr = st.columns([2, 1])
+    with cj:
+        st.selectbox(
+            "Jump **Event date** to a card",
+            opts,
+            key="_mma_cal_jump_date",
+            on_change=_jump_to_card_date,
+            help="Updates the Event date control below so you can model that card.",
+        )
+    with cr:
+        if st.button("Refresh Odds API", help="Clear the 30-minute schedule cache and refetch."):
+            _cached_upcoming_mma_schedule.clear()
+            st.rerun()
+
+    show = dfu.drop(columns=["commence_utc", "_idx"], errors="ignore").copy()
+    st.dataframe(show, hide_index=True, use_container_width=True)
+
+
 def main() -> None:
     if os.environ.get("SPORTS_HUB") != "1":
         st.set_page_config(page_title="MMA fight model", layout="wide")
@@ -358,6 +415,11 @@ def main() -> None:
         "**Labels** use official ``outcome``. **Rates** (sig strikes, TD/15, KD/min, subs/fight) use **prior** "
         "cage time from merged ``events_raw`` bout totals—not the wide CSV career columns."
     )
+
+    today = date.today()
+    if "mma_event_date" not in st.session_state:
+        st.session_state.mma_event_date = today
+    _mma_upcoming_calendar_section()
 
     hist = _cached_hist()
     hist = hist.copy()
@@ -406,16 +468,16 @@ def main() -> None:
 
     d_min = hist["event_date"].min().date()
     d_max = hist["event_date"].max().date()
-    today = date.today()
     d_hi = max(d_max, today + timedelta(days=730))
-    default_pick = min(max(today, d_min), d_hi)
-    pick = st.date_input(
+    st.session_state.mma_event_date = min(max(st.session_state.mma_event_date, d_min), d_hi)
+    st.date_input(
         "Event date",
-        value=default_pick,
         min_value=d_min,
         max_value=d_hi,
-        help="Pick a card date. Future UFC uses **Fetch MMA (Odds API)** or paste CSV. Dates use **US/Eastern** for API matchups.",
+        key="mma_event_date",
+        help="Pick a card date. Future UFC uses **Fetch MMA matchups** or the calendar above (Odds API). Dates use **US/Eastern** for API matchups.",
     )
+    pick = st.session_state.mma_event_date
 
     if today > d_max:
         st.info(

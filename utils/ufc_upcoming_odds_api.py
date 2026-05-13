@@ -93,6 +93,24 @@ def _favourite_underdog_from_h2h(
     return None
 
 
+def _parse_commence_fighters(ev: dict[str, Any]) -> tuple[pd.Timestamp, date, str, str] | None:
+    """Return ``(commence_utc, card_day_ny, home, away)`` or ``None`` if unusable."""
+    ct_raw = ev.get("commence_time")
+    if not ct_raw:
+        return None
+    ct = pd.Timestamp(ct_raw)
+    if ct.tz is None:
+        ct = ct.tz_localize("UTC")
+    else:
+        ct = ct.tz_convert("UTC")
+    card_day = ct.tz_convert(NY).date()
+    home = str(ev.get("home_team") or "").strip()
+    away = str(ev.get("away_team") or "").strip()
+    if not home or not away:
+        return None
+    return ct, card_day, home, away
+
+
 def fetch_mma_odds_events(api_key: str, *, timeout: int = 45) -> list[dict[str, Any]]:
     r = requests.get(
         ODDS_URL,
@@ -115,21 +133,11 @@ def fetch_mma_odds_events(api_key: str, *, timeout: int = 45) -> list[dict[str, 
 def mma_events_to_slate_dataframe(events: list[dict[str, Any]], pick: date) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for ix, ev in enumerate(events):
-        ct_raw = ev.get("commence_time")
-        if not ct_raw:
+        parsed = _parse_commence_fighters(ev)
+        if parsed is None:
             continue
-        ct = pd.Timestamp(ct_raw)
-        if ct.tz is None:
-            ct = ct.tz_localize("UTC")
-        else:
-            ct = ct.tz_convert("UTC")
-        card_day = ct.tz_convert(NY).date()
+        ct, card_day, home, away = parsed
         if card_day != pick:
-            continue
-
-        home = str(ev.get("home_team") or "").strip()
-        away = str(ev.get("away_team") or "").strip()
-        if not home or not away:
             continue
 
         bm = _pick_bookmaker(ev.get("bookmakers") or [])
@@ -167,3 +175,48 @@ def fetch_mma_slate_for_event_date(api_key: str, pick: date) -> pd.DataFrame:
     """Return slate rows for ``pick`` (US/Eastern card date) or an empty DataFrame."""
     events = fetch_mma_odds_events(api_key)
     return mma_events_to_slate_dataframe(events, pick)
+
+
+def mma_events_to_upcoming_schedule_dataframe(
+    events: list[dict[str, Any]], *, only_future: bool = True
+) -> pd.DataFrame:
+    """
+    All listed MMA fights (Odds API), **US/Eastern card date**, optionally only not yet started (UTC ``now``).
+    Includes fights without H2H lines so the calendar reflects scheduled matchups.
+    """
+    now = pd.Timestamp.now(tz="UTC")
+    rows: list[dict[str, Any]] = []
+    for ix, ev in enumerate(events):
+        parsed = _parse_commence_fighters(ev)
+        if parsed is None:
+            continue
+        ct, card_day, home, away = parsed
+        if only_future and ct < now:
+            continue
+        bm = _pick_bookmaker(ev.get("bookmakers") or [])
+        has_h2h = bm is not None and _favourite_underdog_from_h2h(bm, home, away) is not None
+        title = str(ev.get("sport_title") or "MMA")
+        commence_ny = ct.tz_convert(NY)
+        rows.append(
+            {
+                "card_date": card_day,
+                "commence_utc": ct,
+                "commence_et_str": commence_ny.strftime("%a %b %d · %H:%M ET"),
+                "fighter1": home,
+                "fighter2": away,
+                "has_h2h_odds": bool(has_h2h),
+                "event_title": title,
+                "_idx": ix,
+            }
+        )
+    if not rows:
+        return pd.DataFrame()
+    out = pd.DataFrame(rows)
+    out = out.sort_values(["commence_utc", "_idx"], kind="mergesort")
+    return out
+
+
+def fetch_upcoming_mma_schedule(api_key: str, *, only_future: bool = True) -> pd.DataFrame:
+    """Convenience: fetch Odds API events and build the upcoming schedule table."""
+    events = fetch_mma_odds_events(api_key)
+    return mma_events_to_upcoming_schedule_dataframe(events, only_future=only_future)
