@@ -599,21 +599,15 @@ def main() -> None:
     d_max = hist["event_date"].max().date()
     d_hi = max(d_max, today + timedelta(days=730))
     st.session_state.mma_event_date = min(max(st.session_state.mma_event_date, d_min), d_hi)
-    st.date_input(
-        "Event date",
-        min_value=d_min,
-        max_value=d_hi,
-        key="mma_event_date",
-        help="Pick a card date. Future UFC uses **Fetch MMA matchups** or the calendar above (Odds API). Dates use **US/Eastern** for API matchups.",
-    )
-    pick = st.session_state.mma_event_date
-
-    if today > d_max:
-        st.info(
-            f"Historical training CSV ends **{d_max}**. Real upcoming cards: use **Fetch MMA matchups** with a free key from "
-            f"[the-odds-api.com](https://the-odds-api.com) (env `THE_ODDS_API_KEY`), or paste CSV. "
-            f"API dates match **US/Eastern**."
+    with st.expander("Historical CSV date", expanded=False):
+        st.date_input(
+            "Event date",
+            min_value=d_min,
+            max_value=d_hi,
+            key="mma_event_date",
+            help="Dates in your merged training export. For **upcoming** cards, use the calendar (Odds API) or **Upcoming fights** below.",
         )
+    pick = st.session_state.mma_event_date
 
     builder = PreFightBuilder()
     walk_history_until_date(hist_sorted, pd.Timestamp(pick), builder)
@@ -623,7 +617,6 @@ def main() -> None:
     future_source: str | None = None
 
     if slate_hist.empty:
-        st.warning("No fights for this date in the cached historical CSV.")
         b_pick, b_df, b_src = _unpack_future_bundle(st.session_state.get(_FUTURE_SLATE_SESSION_KEY))
         if b_pick == pick and b_df is not None and not b_df.empty and b_src is not None:
             slate = b_df.sort_values(["event_name", "_idx"], kind="mergesort")
