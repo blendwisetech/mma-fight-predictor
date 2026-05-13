@@ -385,7 +385,7 @@ THE_ODDS_API_KEY = "your-key-here"
 THE_ODDS_API_KEY = "your-key-here"
 ```
 
-4. Alternatively, paste the key in **The Odds API key** under *Upcoming fights* (never commit it to git).
+4. Set **THE_ODDS_API_KEY** in Secrets or the environment (never commit it to git), then reboot the app.
 """
             )
             try:
@@ -595,26 +595,16 @@ def main() -> None:
 
         api_env = get_odds_api_key()
         st.markdown("### Upcoming fights")
-        ck = st.columns([2, 1])
-        with ck[0]:
-            api_key_in = st.text_input(
-                "The Odds API key",
-                type="password",
-                placeholder="Optional if THE_ODDS_API_KEY is set in Secrets / environment",
-                help="Sign up at the-odds-api.com (free quota). Never commit keys. "
-                "If you use Streamlit Secrets, reboot the app after saving — do not rely on this field.",
-                key="odds_api_key_field",
-            )
-        api_key_use = (api_env or (api_key_in or "").strip()).strip()
-        with ck[1]:
-            st.write("")
-            st.write("")
-            fetch_clicked = st.button(
-                "Fetch MMA matchups",
-                type="primary",
-                disabled=not api_key_use,
-                help="UFC/MMA moneylines for this Event date (US/Eastern card day). Uses API quota.",
-            )
+        api_key_use = (api_env or "").strip()
+        fetch_clicked = st.button(
+            "Fetch MMA matchups",
+            type="primary",
+            disabled=not api_key_use,
+            help="Uses **THE_ODDS_API_KEY** from environment or Streamlit Secrets (reboot after saving Secrets). "
+            "US/Eastern card date for the selected event.",
+        )
+        if not api_key_use:
+            st.caption("Set **THE_ODDS_API_KEY** in Secrets or the environment to enable fetching.")
         if fetch_clicked and api_key_use:
             try:
                 df_api = fetch_mma_slate_for_event_date(api_key_use, pick)
