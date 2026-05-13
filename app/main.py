@@ -241,10 +241,8 @@ def _append_stake_columns(
     return out
 
 
-def _multiselect_label(r: dict) -> str:
-    sid = str(r.get("fight_id"))[:8]
-    wc = str(r.get("weight_class") or "")
-    return f"[{sid}] {wc}: {r['Fighter A']} vs {r['Fighter B']}"
+def _fight_pair_label(r: dict) -> str:
+    return f"{r['Fighter A']} vs {r['Fighter B']}"
 
 
 _SLATE_DISPLAY_COLS = [
@@ -727,10 +725,17 @@ def main() -> None:
         st.session_state["_mma_picked_fight_ids"] = []
 
     pick_ns = str(pick).replace("-", "_")
-    st.markdown("**Pick fights to focus / log** — check rows, then click **Pick fights**.")
+    hdr_l, hdr_r = st.columns([4, 1])
+    with hdr_l:
+        st.markdown("**Pick fights to focus / log** — check rows, then click **Pick fights**.")
+    with hdr_r:
+        if st.button("Select all"):
+            for r in rows_out:
+                st.session_state[f"mma_sf_{pick_ns}_{str(r['fight_id'])}"] = True
+            st.rerun()
     for r in rows_out:
         fid = str(r["fight_id"])
-        st.checkbox(_multiselect_label(r), key=f"mma_sf_{pick_ns}_{fid}")
+        st.checkbox(_fight_pair_label(r), key=f"mma_sf_{pick_ns}_{fid}")
 
     if st.button("Pick fights"):
         chosen = [
