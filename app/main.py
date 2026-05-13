@@ -588,51 +588,47 @@ def main() -> None:
 
     if slate_hist.empty:
         b_pick, b_df, b_src = _unpack_future_bundle(st.session_state.get(_FUTURE_SLATE_SESSION_KEY))
+        if b_pick is not None and b_pick != pick:
+            st.session_state.pop(_FUTURE_SLATE_SESSION_KEY, None)
+            st.session_state.pop("_mma_odds_fetch_sig", None)
+            b_pick, b_df, b_src = None, None, None
         if b_pick == pick and b_df is not None and not b_df.empty and b_src is not None:
             slate = b_df.sort_values(["event_name", "_idx"], kind="mergesort")
             future_source = b_src
             st.success(f"Using **{len(slate)}** fight(s) loaded via **{future_source}** for **{pick}**.")
 
-        api_env = get_odds_api_key()
         st.markdown("### Upcoming fights")
+        api_env = get_odds_api_key()
         api_key_use = (api_env or "").strip()
-        fetch_clicked = st.button(
-            "Fetch MMA matchups",
-            type="primary",
-            disabled=not api_key_use,
-            help="Uses **THE_ODDS_API_KEY** from environment or Streamlit Secrets (reboot after saving Secrets). "
-            "US/Eastern card date for the selected event.",
-        )
-        if not api_key_use:
-            st.caption("Set **THE_ODDS_API_KEY** in Secrets or the environment to enable fetching.")
-        if fetch_clicked and api_key_use:
-            try:
-                df_api = fetch_mma_slate_for_event_date(api_key_use, pick)
-                if df_api.empty:
+
+        if slate.empty and api_key_use:
+            fetch_sig = (pick, api_key_use)
+            if st.session_state.get("_mma_odds_fetch_sig") != fetch_sig:
+                st.session_state["_mma_odds_fetch_sig"] = fetch_sig
+                try:
+                    df_api = fetch_mma_slate_for_event_date(api_key_use, pick)
+                    if df_api is not None and not df_api.empty:
+                        st.session_state[_FUTURE_SLATE_SESSION_KEY] = (pick, df_api, "odds_api")
+                        st.rerun()
                     st.warning(
                         "No MMA events from The Odds API on this **US/Eastern** date. "
-                        "Try an adjacent day or confirm a card is scheduled."
+                        "Try another card date or confirm a card is scheduled."
                     )
-                else:
-                    st.session_state[_FUTURE_SLATE_SESSION_KEY] = (pick, df_api, "odds_api")
-                    st.rerun()
-            except requests.HTTPError as e:
-                st.error(f"Odds API HTTP error: {e}")
-            except Exception as e:
-                st.error(f"Odds API error: {e!s}")
-
-        bundle_prev = st.session_state.get(_FUTURE_SLATE_SESSION_KEY)
-        b_pick_prev, _, _ = _unpack_future_bundle(bundle_prev)
-        if b_pick_prev is not None and b_pick_prev != pick:
-            st.caption(f"Saved slate is for **{b_pick_prev}** — fetch again for **{pick}**.")
-        if future_source and st.button("Clear loaded slate"):
-            st.session_state.pop(_FUTURE_SLATE_SESSION_KEY, None)
-            st.rerun()
+                except requests.HTTPError as e:
+                    st.error(f"Odds API HTTP error: {e}")
+                except Exception as e:
+                    st.error(f"Odds API error: {e!s}")
+        elif slate.empty and not api_key_use:
+            st.caption(
+                "No historical rows for this date. Set **THE_ODDS_API_KEY** in Secrets or the environment "
+                "(reboot after saving) to load an upcoming card automatically."
+            )
 
         if slate.empty:
             return
     else:
         st.session_state.pop(_FUTURE_SLATE_SESSION_KEY, None)
+        st.session_state.pop("_mma_odds_fetch_sig", None)
 
     reg, win_b = get_pipelines()
     blend_w = float((reg.get("production") or {}).get("win_blend_weight", 0.0) or 0.0)
