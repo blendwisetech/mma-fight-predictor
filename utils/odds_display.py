@@ -88,3 +88,40 @@ def format_ev(x: float) -> str:
     if abs(x) < 0.0005:
         return "0.00"
     return f"{x:+.3f}"
+
+
+def kelly_fraction_full(p_win: float, decimal_odds: float) -> float:
+    """Full Kelly fraction of bankroll for a win-only bet at decimal ``decimal_odds`` (0 if no +edge)."""
+    if not _finite(p_win) or not _finite(decimal_odds) or decimal_odds <= 1.0:
+        return 0.0
+    edge = p_win * decimal_odds - 1.0
+    if edge <= 0.0:
+        return 0.0
+    return float(edge / (decimal_odds - 1.0))
+
+
+def suggest_stake_dollars(
+    bankroll: float,
+    p_model_on_pick: float,
+    decimal_odds_pick: float,
+    *,
+    kelly_scale: float = 0.25,
+    max_fraction_per_bet: float = 0.05,
+) -> float:
+    """
+    Dollar stake on **Model pick** at ``decimal_odds_pick`` using scaled Kelly, capped per fight.
+
+    ``kelly_scale`` (e.g. 0.25) multiplies **full** Kelly; ``max_fraction_per_bet`` caps fraction of bankroll
+    (e.g. 0.05 = 5%). Returns 0 when bankroll or odds invalid or Kelly is non-positive.
+    """
+    if bankroll <= 0.0 or not _finite(bankroll):
+        return 0.0
+    if not _finite(p_model_on_pick) or not _finite(decimal_odds_pick):
+        return 0.0
+    kf = kelly_fraction_full(float(p_model_on_pick), float(decimal_odds_pick))
+    if kf <= 0.0:
+        return 0.0
+    ks = float(kelly_scale) if _finite(float(kelly_scale)) else 0.25
+    mx = float(max_fraction_per_bet) if _finite(float(max_fraction_per_bet)) else 0.05
+    fr = min(kf * ks, max(1e-9, mx))
+    return float(max(0.0, round(bankroll * fr, 2)))

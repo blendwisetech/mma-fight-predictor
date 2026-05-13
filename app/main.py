@@ -55,6 +55,7 @@ from utils.odds_display import (
     format_american,
     format_ev,
     prob_to_fair_decimal,
+    suggest_stake_dollars,
 )
 from utils.mma_schedule_calendar import (
     aggregate_counts_and_tooltips,
@@ -264,6 +265,33 @@ def _rows_to_display_df(rows_out: list[dict]) -> pd.DataFrame:
     return pd.DataFrame(recs)
 
 
+def _append_stake_columns(
+    disp: pd.DataFrame,
+    bankroll: float,
+    kelly_scale: float,
+    max_fraction_per_bet: float,
+) -> pd.DataFrame:
+    """Add ``Stake $`` and ``% BR`` (percent of bankroll) from Kelly-style sizing on Model pick."""
+    out = disp.copy()
+    stakes: list[float] = []
+    pcts: list[float] = []
+    for _, row in out.iterrows():
+        p = float(row["P model"])
+        d = float(row["Book dec (pick)"])
+        amt = suggest_stake_dollars(
+            float(bankroll),
+            p,
+            d,
+            kelly_scale=float(kelly_scale),
+            max_fraction_per_bet=float(max_fraction_per_bet),
+        )
+        stakes.append(amt)
+        pcts.append(float(100.0 * amt / bankroll) if bankroll > 0.0 and amt > 0.0 else 0.0)
+    out["Stake $"] = stakes
+    out["% BR"] = pcts
+    return out
+
+
 def _multiselect_label(r: dict) -> str:
     sid = str(r.get("fight_id"))[:8]
     wc = str(r.get("weight_class") or "")
@@ -283,6 +311,8 @@ _SLATE_DISPLAY_COLS = [
     "Mkt fair % (pick)",
     "EV fmt",
     "Bet lean",
+    "Stake $",
+    "% BR",
     "P(A)",
     "P(B)",
     "Src",
@@ -336,6 +366,18 @@ def _fight_table_column_config() -> dict[str, st.column_config.Column]:
             "Bet?",
             width="small",
             help="+EV if model edge vs offered line (rough; shop lines).",
+        ),
+        "Stake $": st.column_config.NumberColumn(
+            "Stake $",
+            width="small",
+            format="$%.2f",
+            help="Kelly-style stake on *Model pick* (scaled + capped); 0 if no line or no +edge.",
+        ),
+        "% BR": st.column_config.NumberColumn(
+            "% BR",
+            width="small",
+            format="%.2f",
+            help="Stake as percent of bankroll.",
         ),
         "P(A)": st.column_config.NumberColumn("P(A)", format="%.3f"),
         "P(B)": st.column_config.NumberColumn("P(B)", format="%.3f"),
@@ -697,6 +739,39 @@ def main() -> None:
         disp_view = disp_view.sort_values("_ev_sort", ascending=False, kind="mergesort")
     disp_view = disp_view.drop(columns=["_ev_sort"], errors="ignore")
 
+    with st.expander("Bankroll & suggested stakes (optional)", expanded=False):
+        st.caption(
+            "**Not financial advice.** Stakes are a rough **Kelly-style** illustration on **Model pick** at **Bk dec** "
+            "(win-only); they assume the model and line are right and ignore correlation across fights on the same card."
+        )
+        br = st.number_input("Bankroll ($)", min_value=0.0, value=1000.0, step=50.0, key="mma_bankroll_usd")
+        ks = st.slider(
+            "Kelly scale (× full Kelly)",
+            min_value=0.05,
+            max_value=1.0,
+            value=0.25,
+            step=0.05,
+            help="Lower = more conservative (e.g. 0.25 = quarter Kelly).",
+        )
+        mxp = (
+            st.slider(
+                "Max stake per fight (% of bankroll)",
+                min_value=0.5,
+                max_value=20.0,
+                value=5.0,
+                step=0.5,
+                key="mma_max_stake_pct",
+            )
+            / 100.0
+        )
+    disp_view = _append_stake_columns(disp_view, float(br), float(ks), float(mxp))
+    if br > 0:
+        tot = float(disp_view["Stake $"].sum())
+        st.caption(
+            f"Suggested **total** risk on this slate: **${tot:,.2f}** ({100.0 * tot / br:.2f}% of bankroll) — "
+            "many small edges can still sum to a lot of exposure."
+        )
+
     models_line = " · ".join(sorted({str(r.get("model") or "?") for r in rows_out}))
     provenance_lbl = (
         ""
@@ -706,7 +781,8 @@ def main() -> None:
     st.subheader(f"Slate — {pick} ({len(disp_view)} fights){provenance_lbl}")
     st.caption(
         "**Who wins:** *Model pick* = higher of P(A)/P(B). **Bet?** flags rough **+EV** on *Model pick* at **Bk dec** (not financial advice). "
-        "**Fair US** = model fair line; **Bk** = books (CSV or Odds API). **EV $1** = p×decimal−1. Models: "
+        "**Fair US** = model fair line; **Bk** = books (CSV or Odds API). **EV $1** = p×decimal−1. "
+        "Open **Bankroll & suggested stakes** for Kelly-style **Stake $** (Model pick only). Models: "
         + models_line
     )
     st.dataframe(
